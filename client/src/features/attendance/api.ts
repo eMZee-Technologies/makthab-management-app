@@ -5,6 +5,7 @@ import type { Attendance, AttendanceSummaryRow } from '@/types/domain';
 export interface AttendanceListParams {
   student_id?: number;
   class_id?: number;
+  category_id?: number;
   date?: string;
   month?: number;
   year?: number;
@@ -35,6 +36,7 @@ export interface AttendanceSummaryParams {
   month: number;
   year: number;
   class_id?: number;
+  category_id?: number;
   page?: number;
   limit?: number;
   sortBy?: string;

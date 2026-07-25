@@ -17,6 +17,7 @@ export const studentCreateSchema = z.object({
   whatsappNo: phoneSchema,
   address: z.string().trim().optional().nullable(),
   classId: z.number().int().positive(),
+  categoryId: z.number().int().positive().nullable().optional(),
   academicYearId: z.number().int().positive(),
   photoPath: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
@@ -63,6 +64,7 @@ export type StudentDto = {
   whatsappNo: string;
   address: string | null;
   classId: number;
+  categoryId: number | null;
   academicYearId: number;
   photoPath: string | null;
   notes: string | null;

@@ -12,3 +12,4 @@ export * from "./schemas/report";
 export * from "./schemas/user";
 export * from "./schemas/orgProfile";
 export * from "./schemas/role";
+export * from "./schemas/category";

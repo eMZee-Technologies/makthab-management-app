@@ -71,7 +71,14 @@ attendanceRouter.get(
       where: {
         ...(df ? { date: df } : {}),
         ...(q.student_id ? { studentId: q.student_id } : {}),
-        ...(q.class_id ? { student: { classId: q.class_id } } : {}),
+        ...(q.class_id || q.category_id
+          ? {
+              student: {
+                ...(q.class_id ? { classId: q.class_id } : {}),
+                ...(q.category_id ? { categoryId: q.category_id } : {}),
+              },
+            }
+          : {}),
       },
       include: { student: true },
     });
@@ -145,7 +152,14 @@ attendanceRouter.get(
       where: {
         ...(df ? { date: df } : {}),
         ...(q.student_id ? { studentId: q.student_id } : {}),
-        ...(q.class_id ? { student: { classId: q.class_id } } : {}),
+        ...(q.class_id || q.category_id
+          ? {
+              student: {
+                ...(q.class_id ? { classId: q.class_id } : {}),
+                ...(q.category_id ? { categoryId: q.category_id } : {}),
+              },
+            }
+          : {}),
       },
       include: { student: true },
       orderBy: { date: "desc" },

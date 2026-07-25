@@ -10,8 +10,19 @@ referenceRouter.use(requireAuth);
 referenceRouter.get(
   "/classes",
   asyncHandler(async (_req, res) => {
-    const classes = await prisma.class.findMany({ orderBy: { id: "asc" }, include: { teacher: true } });
+    const classes = await prisma.class.findMany({
+      orderBy: { id: "asc" },
+      include: { teacher: true, categories: { orderBy: { name: "asc" } } },
+    });
     res.json({ data: classes });
+  })
+);
+
+referenceRouter.get(
+  "/categories",
+  asyncHandler(async (_req, res) => {
+    const categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
+    res.json({ data: categories });
   })
 );
 

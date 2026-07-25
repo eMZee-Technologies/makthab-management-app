@@ -22,6 +22,7 @@ model Student {
   whatsappNo     String
   address        String?
   classId        Int
+  categoryId     Int?
   academicYearId Int
   photoPath      String?
   notes          String? // free-text: occupation, school name, previous studies, etc.
@@ -32,11 +33,13 @@ model Student {
   updatedAt      DateTime  @updatedAt
 
   class        Class        @relation(fields: [classId], references: [id])
+  category     Category?    @relation(fields: [categoryId], references: [id])
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
   feePayments  FeePayment[]
   attendance   Attendance[]
 
   @@index([classId])
+  @@index([categoryId])
   @@index([academicYearId])
   @@index([status])
 }
@@ -162,8 +165,24 @@ model Class {
   name      String @unique
   teacherId Int?
 
-  teacher  Staff?    @relation(fields: [teacherId], references: [id])
-  students Student[]
+  teacher    Staff?     @relation(fields: [teacherId], references: [id])
+  students   Student[]
+  categories Category[] // categories this class offers (e.g. Noorani Qaida, Hifz Quran)
+}
+
+// Global master list of study-track categories a class can offer (e.g. Noorani
+// Qaida, Naazira Quran, Hifz Quran). Shared across classes; a Class picks the
+// subset it offers via the implicit m2m below. A Student optionally belongs to
+// one category within their class; FeeStructure can optionally vary by
+// category too (categoryId: null on either means "class-wide / no category").
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  classes       Class[]
+  students      Student[]
+  feeStructures FeeStructure[]
 }
 
 model AcademicYear {
@@ -183,17 +202,22 @@ model ExpenseCategory {
   expenses Expense[]
 }
 
-// Fee amount per class + academic year (backs GET/POST /fees/structures).
+// Fee amount per class (+ optional category) + academic year (backs GET/POST
+// /fees/structures). categoryId: null means the amount applies class-wide,
+// regardless of category — that's the fallback when no category-specific row
+// exists (see fees.ts structFor()).
 model FeeStructure {
   id             Int    @id @default(autoincrement())
   classId        Int
+  categoryId     Int?
   academicYearId Int
   feeType        String
   amount         Float
 
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
+  category     Category?    @relation(fields: [categoryId], references: [id])
 
-  @@unique([classId, academicYearId, feeType])
+  @@unique([classId, categoryId, academicYearId, feeType])
 }
 
 // Institution letterhead (name + address) printed as the header on every

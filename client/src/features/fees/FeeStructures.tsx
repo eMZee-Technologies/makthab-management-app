@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
@@ -40,13 +40,32 @@ export function FeeStructures() {
     handleSubmit,
     control,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<FeeStructureCreateInput>({
     resolver: zodResolver(feeStructureCreateSchema),
     defaultValues: { feeType: 'monthly' } as Partial<FeeStructureCreateInput> as FeeStructureCreateInput,
   });
 
+  const classId = watch('classId');
+  const categoryOptions = (classes.find((c) => c.id === Number(classId))?.categories ?? []).map((c) => ({
+    value: c.id,
+    label: c.name,
+  }));
+  // A category from a previously-selected class is never valid once the
+  // class changes, so drop it back to "class-wide" (undefined) instead of
+  // silently keeping a stale id.
+  const prevClassId = useRef<number | string | undefined>(classId);
+  useEffect(() => {
+    if (prevClassId.current !== classId) {
+      prevClassId.current = classId;
+      setValue('categoryId', undefined);
+    }
+  }, [classId, setValue]);
+
   const classNameFor = (id: number) => classes.find((c) => c.id === id)?.name ?? id;
+  const categoryNameFor = (s: FeeStructure) => s.category?.name ?? t('fees.classWide');
 
   const confirmDelete = () => {
     if (!deleting) return;
@@ -82,6 +101,14 @@ export function FeeStructures() {
             options={classes.map((c) => ({ value: c.id, label: c.name }))}
           />
           <SelectField
+            name="categoryId"
+            control={control}
+            label={t('fees.category')}
+            error={errors.categoryId?.message}
+            placeholder={t('fees.classWide')}
+            options={categoryOptions}
+          />
+          <SelectField
             name="academicYearId"
             control={control}
             label={t('common.academicYear')}
@@ -109,7 +136,7 @@ export function FeeStructures() {
         </form>
 
         {isLoading ? (
-          <LoadingRows cols={4} />
+          <LoadingRows cols={5} />
         ) : isError ? (
           <ErrorState onRetry={refetch} />
         ) : !structures || structures.length === 0 ? (
@@ -119,6 +146,7 @@ export function FeeStructures() {
             <TableHeader>
               <TableRow>
                 <TableHead>{t('students.class')}</TableHead>
+                <TableHead>{t('fees.category')}</TableHead>
                 <TableHead>{t('fees.feeType')}</TableHead>
                 <TableHead className="text-end">{t('fees.amountDue')}</TableHead>
                 {canManage && <TableHead className="text-end">{t('common.actions')}</TableHead>}
@@ -128,6 +156,7 @@ export function FeeStructures() {
               {structures.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{classNameFor(s.classId)}</TableCell>
+                  <TableCell>{categoryNameFor(s)}</TableCell>
                   <TableCell className="capitalize">{s.feeType}</TableCell>
                   <TableCell className="text-end">{formatCurrency(s.amount, i18n.language)}</TableCell>
                   {canManage && (

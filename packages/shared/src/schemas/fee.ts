@@ -68,9 +68,11 @@ export const defaulterUpdateSchema = z.object({
 });
 export type DefaulterUpdateDto = z.infer<typeof defaulterUpdateSchema>;
 
-// Fee structure — POST /fees/structures
+// Fee structure — POST /fees/structures. categoryId: omitted/null means the
+// amount applies class-wide, regardless of category (see fees.ts structFor()).
 export const feeStructureCreateSchema = z.object({
   classId: z.number().int().positive(),
+  categoryId: z.number().int().positive().nullable().optional(),
   academicYearId: z.number().int().positive(),
   feeType: feeTypeSchema,
   amount: z.number().nonnegative(),

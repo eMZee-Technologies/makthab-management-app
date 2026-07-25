@@ -147,8 +147,8 @@ feesRouter.post(
 );
 
 // A defaulter row: a student's outstanding monthly amount, where amountDue is
-// the manual override (arrears) if set, else the class/year fee-structure amount.
-type StudentWithClass = { id: number; fullName: string; admissionNo: string; classId: number; academicYearId: number; whatsappNo: string; feeOverrideAmount: number | null; class: { name: string } | null };
+// the manual override (arrears) if set, else the class/category/year fee-structure amount.
+type StudentWithClass = { id: number; fullName: string; admissionNo: string; classId: number; categoryId: number | null; academicYearId: number; whatsappNo: string; feeOverrideAmount: number | null; class: { name: string } | null };
 function defaulterRow(s: StudentWithClass, structAmount: number) {
   return {
     studentId: s.id,
@@ -180,26 +180,30 @@ feesRouter.get(
       where: { feeType: "monthly" },
       include: { academicYear: true },
     });
-    // Resolve a class's monthly fee. Prefer an exact classId+academicYearId match,
-    // but a class's FeeStructure is often configured under an older academic year
-    // than the student's current one; an exact-only lookup silently returned 0 in
-    // that case even though an amount genuinely exists. So fall back to that
-    // class's structure with the latest academicYear.startDate, and only return 0
-    // when the class has no structure in any year.
-    const structFor = (classId: number, yearId: number) => {
-      const forClass = structures.filter((s) => s.classId === classId);
-      if (forClass.length === 0) return 0;
-      const exact = forClass.find((s) => s.academicYearId === yearId);
+    // Resolve a class(+category)'s monthly fee. Prefer an exact
+    // classId+categoryId+academicYearId match, but a class's FeeStructure is
+    // often configured under an older academic year than the student's
+    // current one; an exact-only lookup silently returned 0 in that case even
+    // though an amount genuinely exists. So fall back to that class+category's
+    // structure with the latest academicYear.startDate; if there's no
+    // category-specific structure at all, fall back again to the class-wide
+    // (categoryId: null) structure the same way, and only return 0 when
+    // neither exists in any year.
+    const pickAmount = (classId: number, categoryId: number | null, yearId: number) => {
+      const rows = structures.filter((s) => s.classId === classId && s.categoryId === categoryId);
+      if (rows.length === 0) return null;
+      const exact = rows.find((s) => s.academicYearId === yearId);
       if (exact) return exact.amount;
-      const latest = forClass.reduce((a, b) =>
-        a.academicYear.startDate >= b.academicYear.startDate ? a : b
-      );
-      return latest.amount;
+      return rows.reduce((a, b) => (a.academicYear.startDate >= b.academicYear.startDate ? a : b)).amount;
     };
+    const structFor = (classId: number, categoryId: number | null, yearId: number) =>
+      pickAmount(classId, categoryId, yearId) ??
+      (categoryId != null ? pickAmount(classId, null, yearId) : null) ??
+      0;
 
     const rows = students
       .filter((s) => !paidSet.has(s.id))
-      .map((s) => defaulterRow(s, structFor(s.classId, s.academicYearId)));
+      .map((s) => defaulterRow(s, structFor(s.classId, s.categoryId, s.academicYearId)));
 
     const dir = sortOrder === "desc" ? -1 : 1;
     rows.sort((a, b) => {
@@ -242,7 +246,7 @@ feesRouter.get(
   "/structures",
   asyncHandler(async (_req, res) => {
     const items = await prisma.feeStructure.findMany({
-      include: { academicYear: true },
+      include: { academicYear: true, category: true },
       orderBy: { id: "asc" },
     });
     res.json({ data: items });
@@ -254,17 +258,16 @@ feesRouter.post(
   validateBody(feeStructureCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof feeStructureCreateSchema._output;
-    const item = await prisma.feeStructure.upsert({
-      where: {
-        classId_academicYearId_feeType: {
-          classId: dto.classId,
-          academicYearId: dto.academicYearId,
-          feeType: dto.feeType,
-        },
-      },
-      update: { amount: dto.amount },
-      create: dto,
+    // Prisma's generated compound-unique key type doesn't accept null for a
+    // nullable field (categoryId), so upsert-by-compound-key isn't usable here
+    // — look the row up as a plain filter (which does accept null) instead.
+    const categoryId = dto.categoryId ?? null;
+    const existing = await prisma.feeStructure.findFirst({
+      where: { classId: dto.classId, categoryId, academicYearId: dto.academicYearId, feeType: dto.feeType },
     });
+    const item = existing
+      ? await prisma.feeStructure.update({ where: { id: existing.id }, data: { amount: dto.amount } })
+      : await prisma.feeStructure.create({ data: { ...dto, categoryId } });
     res.status(201).json({ data: item });
   })
 );

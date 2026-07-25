@@ -16,7 +16,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/use-toast';
 import { toDateInput, monthName } from '@/lib/format';
 import { extractApiError } from '@/api/client';
-import { useClasses } from '@/api/reference';
+import { useCategories, useClasses } from '@/api/reference';
 import { useStudents } from '@/features/students/api';
 import { useAttendanceSummary, useLowAlert, useMarkAttendance, type MarkRecord } from './api';
 
@@ -125,12 +125,15 @@ function SummaryTab() {
   const { t } = useTranslation();
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
+  const [categoryId, setCategoryId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
+  const { data: categories = [] } = useCategories();
   const { data, isLoading, isError, refetch } = useAttendanceSummary({
     month,
     year,
+    category_id: categoryId,
     page,
     limit,
     sortBy: sort.sortBy || undefined,
@@ -171,6 +174,21 @@ function SummaryTab() {
             <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
             <SelectContent>
               {years.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select
+            value={categoryId ? String(categoryId) : 'all'}
+            onValueChange={(v) => {
+              setCategoryId(v === 'all' ? undefined : Number(v));
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="w-48"><SelectValue placeholder={t('classes.categories')} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('common.all')}</SelectItem>
+              {categories.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

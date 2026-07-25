@@ -12,6 +12,7 @@ import { adminRouter } from "./admin";
 import { usersRouter } from "./users";
 import { orgProfileRouter } from "./orgProfile";
 import { rolesRouter } from "./roles";
+import { categoriesRouter } from "./categories";
 
 // Aggregate router for /api/v1. Every domain from doc §6 is mounted here.
 export const apiRouter = Router();
@@ -30,6 +31,7 @@ apiRouter.use("/admin", adminRouter);
 apiRouter.use("/classes", classesRouter);
 apiRouter.use("/org-profile", orgProfileRouter);
 apiRouter.use("/roles", rolesRouter);
+apiRouter.use("/categories", categoriesRouter);
 
 // Reference/lookup endpoints (classes, academic-years, expense-categories)
 // live at the /api/v1 root.

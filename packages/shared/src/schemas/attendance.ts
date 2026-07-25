@@ -37,6 +37,7 @@ export type AttendanceSortField = z.infer<typeof attendanceSortField>;
 export const attendanceListQuery = z.object({
   student_id: z.coerce.number().int().positive().optional(),
   class_id: z.coerce.number().int().positive().optional(),
+  category_id: z.coerce.number().int().positive().optional(),
   date: z.string().optional(),
   month: z.coerce.number().int().min(1).max(12).optional(),
   year: z.coerce.number().int().optional(),

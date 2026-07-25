@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
@@ -49,6 +49,8 @@ export function StudentForm({ open, onOpenChange, student }: Props) {
     handleSubmit,
     control,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<StudentCreateInput>({
     resolver: zodResolver(studentCreateSchema),
@@ -58,30 +60,48 @@ export function StudentForm({ open, onOpenChange, student }: Props) {
     } as Partial<StudentCreateInput> as StudentCreateInput,
   });
 
+  // Tracks the classId reset() last set, so the classId-change effect below
+  // can tell "class just got (re)loaded into the form" apart from "the user
+  // actually picked a different class" — only the latter should clear category.
+  const lastResetClassId = useRef<number | undefined>(undefined);
+
   useEffect(() => {
     if (!open) return;
-    reset(
-      student
-        ? ({
-            admissionNo: student.admissionNo,
-            fullName: student.fullName,
-            fatherName: student.fatherName,
-            dateOfBirth: student.dateOfBirth?.slice(0, 10),
-            gender: student.gender,
-            contactNo: student.contactNo,
-            whatsappNo: student.whatsappNo,
-            address: student.address ?? undefined,
-            classId: student.classId,
-            academicYearId: student.academicYearId,
-            status: student.status === 'inactive' ? 'inactive' : 'active',
-          } as StudentCreateInput)
-        : ({
-            gender: 'male',
-            academicYearId: academicYearId ?? undefined,
-            status: 'active',
-          } as Partial<StudentCreateInput> as StudentCreateInput),
-    );
+    const initial = student
+      ? ({
+          admissionNo: student.admissionNo,
+          fullName: student.fullName,
+          fatherName: student.fatherName,
+          dateOfBirth: student.dateOfBirth?.slice(0, 10),
+          gender: student.gender,
+          contactNo: student.contactNo,
+          whatsappNo: student.whatsappNo,
+          address: student.address ?? undefined,
+          classId: student.classId,
+          categoryId: student.categoryId ?? undefined,
+          academicYearId: student.academicYearId,
+          status: student.status === 'inactive' ? 'inactive' : 'active',
+        } as StudentCreateInput)
+      : ({
+          gender: 'male',
+          academicYearId: academicYearId ?? undefined,
+          status: 'active',
+        } as Partial<StudentCreateInput> as StudentCreateInput);
+    lastResetClassId.current = initial.classId;
+    reset(initial);
   }, [open, student, academicYearId, reset]);
+
+  const classId = watch('classId');
+  const selectedClass = (classes ?? []).find((c) => c.id === Number(classId));
+  const categoryOptions = (selectedClass?.categories ?? []).map((c) => ({ value: c.id, label: c.name }));
+
+  // Clear the category once the user actually switches to a different class
+  // (a category from the old class is never valid for the new one).
+  useEffect(() => {
+    if (classId === lastResetClassId.current) return;
+    lastResetClassId.current = classId;
+    setValue('categoryId', undefined);
+  }, [classId, setValue]);
 
   // Load an existing student's photo for the preview (authed blob fetch — a plain
   // <img src> can't send the Bearer token). Clears any locally-picked file first.
@@ -211,6 +231,16 @@ export function StudentForm({ open, onOpenChange, student }: Props) {
             placeholder={t('common.all')}
             options={(classes ?? []).map((c) => ({ value: c.id, label: c.name }))}
           />
+          {categoryOptions.length > 0 && (
+            <SelectField
+              name="categoryId"
+              control={control}
+              label={t('students.category')}
+              error={errors.categoryId?.message}
+              required
+              options={categoryOptions}
+            />
+          )}
           <SelectField
             name="academicYearId"
             control={control}

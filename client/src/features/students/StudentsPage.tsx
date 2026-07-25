@@ -163,7 +163,7 @@ export function StudentsPage() {
           </div>
 
           {isLoading ? (
-            <LoadingRows cols={8} />
+            <LoadingRows cols={9} />
           ) : isError ? (
             <ErrorState onRetry={refetch} />
           ) : !data || data.items.length === 0 ? (
@@ -186,6 +186,7 @@ export function StudentsPage() {
                   <SortableTableHead sortKey="class" sort={sort} onSort={onSort}>
                     {t('students.class')}
                   </SortableTableHead>
+                  <TableHead>{t('students.category')}</TableHead>
                   <SortableTableHead sortKey="status" sort={sort} onSort={onSort}>
                     {t('common.status')}
                   </SortableTableHead>
@@ -201,6 +202,7 @@ export function StudentsPage() {
                     <TableCell>{s.fatherName}</TableCell>
                     <TableCell>{s.contactNo ?? '—'}</TableCell>
                     <TableCell>{s.class?.name ?? s.classId}</TableCell>
+                    <TableCell>{s.category?.name ?? '—'}</TableCell>
                     <TableCell>
                       <Badge variant={s.status === 'active' ? 'success' : 'secondary'}>
                         {t(`common.${s.status === 'active' ? 'active' : 'inactive'}`)}

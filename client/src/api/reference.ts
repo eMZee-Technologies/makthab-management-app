@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from './client';
-import type { AcademicYear, Class, ExpenseCategory } from '@/types/domain';
-import type { ClassCreateInput } from '@/lib/schemas';
+import type { AcademicYear, Category, Class, ExpenseCategory } from '@/types/domain';
+import type { CategoryCreateInput, ClassCreateInput } from '@/lib/schemas';
 
 /**
  * Reference/lookup data used to populate select inputs across forms.
@@ -55,5 +55,41 @@ export function useExpenseCategories() {
     queryKey: ['expense-categories'],
     staleTime: 5 * 60_000,
     queryFn: async () => unwrap<ExpenseCategory[]>((await api.get('/expense-categories')).data),
+  });
+}
+
+// Class categories (e.g. Noorani Qaida, Hifz Quran) — the global master list
+// classes pick from. See ClassForm/CategoriesPage.
+export function useCategories() {
+  return useQuery({
+    queryKey: ['categories'],
+    staleTime: 5 * 60_000,
+    queryFn: async () => unwrap<Category[]>((await api.get('/categories')).data),
+  });
+}
+
+export function useCreateCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CategoryCreateInput) =>
+      unwrap<Category>((await api.post('/categories', input)).data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+  });
+}
+
+export function useUpdateCategory(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: Partial<CategoryCreateInput>) =>
+      unwrap<Category>((await api.patch(`/categories/${id}`, input)).data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
+  });
+}
+
+export function useDeleteCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => (await api.delete(`/categories/${id}`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['categories'] }),
   });
 }

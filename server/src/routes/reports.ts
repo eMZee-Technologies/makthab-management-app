@@ -400,17 +400,25 @@ reportsRouter.get(
   })
 );
 
-// GET /reports/attendance?class_id&month&year
+// GET /reports/attendance?class_id&category_id&month&year
 reportsRouter.get(
   "/attendance",
   asyncHandler(async (req, res) => {
     const classId = req.query.class_id ? Number(req.query.class_id) : undefined;
+    const categoryId = req.query.category_id ? Number(req.query.category_id) : undefined;
     const month = Number(req.query.month);
     const year = Number(req.query.year);
     const rows = await prisma.attendance.findMany({
       where: {
         date: monthWindow(month, year),
-        ...(classId ? { student: { classId } } : {}),
+        ...(classId || categoryId
+          ? {
+              student: {
+                ...(classId ? { classId } : {}),
+                ...(categoryId ? { categoryId } : {}),
+              },
+            }
+          : {}),
       },
       include: { student: true },
     });
@@ -423,7 +431,7 @@ reportsRouter.get(
     }
     await send(res, req.query.format, {
       title: "Attendance Report",
-      subtitle: `${month}/${year}${classId ? ` — class ${classId}` : ""}`,
+      subtitle: `${month}/${year}${classId ? ` — class ${classId}` : ""}${categoryId ? ` — category ${categoryId}` : ""}`,
       headers: ["Student", "Present", "Total", "%"],
       rows: [...byStudent.values()].map((v) => [
         v.name,

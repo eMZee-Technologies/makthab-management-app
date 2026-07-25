@@ -30,6 +30,9 @@ export const studentCreateSchema = z.object({
   whatsappNo: z.string().trim().min(7, 'Enter a valid number'),
   address: z.string().trim().optional(),
   classId: z.coerce.number().int().positive('Select a class'),
+  categoryId: z
+    .preprocess((v) => (v === '' || v == null ? undefined : v), z.coerce.number().int().positive())
+    .optional(),
   academicYearId: z.coerce.number().int().positive('Select a year'),
   status: studentStatusSchema.default('active'),
 });
@@ -40,8 +43,14 @@ export const classCreateSchema = z.object({
   teacherId: z
     .preprocess((v) => (v === '' || v == null ? undefined : v), z.coerce.number().int().positive())
     .optional(),
+  categoryIds: z.array(z.coerce.number()).default([]),
 });
 export type ClassCreateInput = z.infer<typeof classCreateSchema>;
+
+export const categoryCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Required'),
+});
+export type CategoryCreateInput = z.infer<typeof categoryCreateSchema>;
 
 export const feePaymentCreateSchema = z.object({
   studentId: z.coerce.number().int().positive('Select a student'),
@@ -63,6 +72,9 @@ export type DefaulterUpdateInput = z.infer<typeof defaulterUpdateSchema>;
 
 export const feeStructureCreateSchema = z.object({
   classId: z.coerce.number().int().positive('Select a class'),
+  categoryId: z
+    .preprocess((v) => (v === '' || v == null ? undefined : v), z.coerce.number().int().positive())
+    .optional(),
   academicYearId: z.coerce.number().int().positive('Select a year'),
   feeType: feeTypeSchema,
   amount: z.coerce.number().nonnegative(),

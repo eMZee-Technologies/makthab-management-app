@@ -11,10 +11,16 @@ export interface Paginated<T> {
   limit: number;
 }
 
+export interface Category {
+  id: number;
+  name: string;
+}
+
 export interface Class {
   id: number;
   name: string;
   teacherId?: number | null;
+  categories: Category[];
 }
 
 export interface AcademicYear {
@@ -41,11 +47,13 @@ export interface Student {
   whatsappNo: string;
   address?: string | null;
   classId: number;
+  categoryId?: number | null;
   academicYearId: number;
   photoPath?: string | null;
   status: string;
   admissionDate?: string | null;
   class?: Class;
+  category?: Category | null;
   academicYear?: AcademicYear;
   createdAt?: string;
 }
@@ -70,10 +78,12 @@ export interface FeePayment {
 export interface FeeStructure {
   id: number;
   classId: number;
+  categoryId?: number | null;
   academicYearId: number;
   feeType: string;
   amount: number;
   class?: Class;
+  category?: Category | null;
 }
 
 export interface Defaulter {

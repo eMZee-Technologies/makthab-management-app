@@ -21,6 +21,25 @@ export const studentsRouter = Router();
 
 studentsRouter.use(requireAuth);
 
+// A category is only valid for a student if their class actually offers it;
+// it's required once the class offers 1+ categories (so classes that don't
+// use categories at all need no extra data entry), and rejected outright for
+// classes that offer none.
+async function validateCategoryForClass(classId: number, categoryId: number | null | undefined) {
+  const cls = await prisma.class.findUnique({ where: { id: classId }, include: { categories: true } });
+  if (!cls) throw new AppError(400, "invalid_class", "Class not found");
+  if (cls.categories.length > 0) {
+    if (categoryId == null) {
+      throw new AppError(400, "category_required", `Class ${cls.name} requires a category`);
+    }
+    if (!cls.categories.some((c) => c.id === categoryId)) {
+      throw new AppError(400, "invalid_category", `Category is not offered by class ${cls.name}`);
+    }
+  } else if (categoryId != null) {
+    throw new AppError(400, "invalid_category", `Class ${cls.name} does not offer categories`);
+  }
+}
+
 // GET /students — paginated list with q / class_id / status filters.
 studentsRouter.get(
   "/",
@@ -47,6 +66,7 @@ studentsRouter.get(
         where,
         include: {
           class: true,
+          category: true,
           academicYear: true,
           feePayments: {
             where: { feeType: "admission" },
@@ -77,6 +97,7 @@ studentsRouter.post(
     const dto = req.body as typeof studentCreateSchema._output;
     const exists = await prisma.student.findUnique({ where: { admissionNo: dto.admissionNo } });
     if (exists) throw new AppError(409, "duplicate", `Admission number ${dto.admissionNo} already exists`);
+    await validateCategoryForClass(dto.classId, dto.categoryId);
     const student = await prisma.student.create({
       data: {
         admissionNo: dto.admissionNo,
@@ -88,12 +109,13 @@ studentsRouter.post(
         whatsappNo: dto.whatsappNo,
         address: dto.address ?? null,
         classId: dto.classId,
+        categoryId: dto.categoryId ?? null,
         academicYearId: dto.academicYearId,
         photoPath: dto.photoPath ?? null,
         notes: dto.notes ?? null,
         status: dto.status ?? "active",
       },
-      include: { class: true, academicYear: true },
+      include: { class: true, category: true, academicYear: true },
     });
     res.status(201).json({ data: student });
   })
@@ -106,7 +128,7 @@ studentsRouter.get(
     const id = Number(req.params.id);
     const student = await prisma.student.findUnique({
       where: { id },
-      include: { class: true, academicYear: true },
+      include: { class: true, category: true, academicYear: true },
     });
     if (!student) throw new AppError(404, "not_found", "Student not found");
 
@@ -150,10 +172,14 @@ studentsRouter.patch(
     const id = Number(req.params.id);
     const exists = await prisma.student.findUnique({ where: { id } });
     if (!exists) throw new AppError(404, "not_found", "Student not found");
+    const dto = req.body as typeof studentUpdateSchema._output;
+    const effectiveClassId = dto.classId ?? exists.classId;
+    const effectiveCategoryId = "categoryId" in dto ? dto.categoryId : exists.categoryId;
+    await validateCategoryForClass(effectiveClassId, effectiveCategoryId);
     const student = await prisma.student.update({
       where: { id },
-      data: req.body,
-      include: { class: true, academicYear: true },
+      data: dto,
+      include: { class: true, category: true, academicYear: true },
     });
     res.json({ data: student });
   })
@@ -236,7 +262,7 @@ studentsRouter.post(
     const student = await prisma.student.update({
       where: { id },
       data: { photoPath },
-      include: { class: true, academicYear: true },
+      include: { class: true, category: true, academicYear: true },
     });
     res.json({ data: student });
   })
