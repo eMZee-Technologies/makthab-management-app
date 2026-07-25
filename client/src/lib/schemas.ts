@@ -101,7 +101,7 @@ export const userCreateSchema = z.object({
   username: z.string().trim().min(3, 'At least 3 characters'),
   password: z.string().min(6, 'At least 6 characters'),
   email: z.string().trim().email('Enter a valid email'),
-  role: z.enum(['Admin', 'Accountant', 'Teacher']),
+  role: z.string().trim().min(1, 'Required'),
   contactNo: z.string().trim().min(7, 'Enter a valid number'),
   whatsappNo: z.string().trim().min(7, 'Enter a valid number'),
   address: z.string().trim().optional(),
@@ -124,6 +124,18 @@ export const userPasswordResetSchema = z
     path: ['confirmPassword'],
   });
 export type UserPasswordResetInput = z.infer<typeof userPasswordResetSchema>;
+
+export const orgProfileCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Required'),
+  address: z.string().trim().min(1, 'Required'),
+});
+export type OrgProfileCreateInput = z.infer<typeof orgProfileCreateSchema>;
+
+export const roleCreateSchema = z.object({
+  name: z.string().trim().min(1, 'Required'),
+  permissions: z.array(z.string()).default([]),
+});
+export type RoleCreateInput = z.infer<typeof roleCreateSchema>;
 
 export const salaryPaymentCreateSchema = z.object({
   staffId: z.coerce.number().int().positive('Select a staff member'),

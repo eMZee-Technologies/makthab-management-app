@@ -145,6 +145,15 @@ export interface User {
   updatedAt?: string;
 }
 
+export interface OrgProfile {
+  id: number;
+  name: string;
+  address: string;
+  headerImagePath?: string | null;
+  isActive: boolean;
+  updatedAt?: string;
+}
+
 export interface SalaryPayment {
   id: number;
   staffId: number;

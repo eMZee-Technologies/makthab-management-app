@@ -13,7 +13,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireRole } from "../middleware/auth";
+import { requireAuth, requirePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 
 // ---- Users (Admin only) ----------------------------------------------------
@@ -21,7 +21,7 @@ import { AppError } from "../middleware/errorHandler";
 // User login joined 1:1 to a Staff record; contactNo/whatsappNo/address/photo
 // live on Staff, username/email/role/status/password on User.
 export const usersRouter = Router();
-usersRouter.use(requireAuth, requireRole("Admin"));
+usersRouter.use(requireAuth, requirePermission("users.manage"));
 
 // Flatten a User + its linked Staff into the shared UserDto shape.
 function toUserDto(user: User & { staff: Staff }): UserDto {
@@ -78,6 +78,8 @@ usersRouter.post(
   validateBody(userCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof userCreateSchema._output;
+    const roleExists = await prisma.role.findUnique({ where: { name: dto.role } });
+    if (!roleExists) throw new AppError(400, "unknown_role", `Unknown role: ${dto.role}`);
     try {
       const user = await prisma.$transaction(async (tx) => {
         const staff = await tx.staff.create({
@@ -123,6 +125,10 @@ usersRouter.patch(
     if (!existing) throw new AppError(404, "not_found", "User not found");
 
     const dto = req.body as typeof userUpdateSchema._output;
+    if (dto.role !== undefined) {
+      const roleExists = await prisma.role.findUnique({ where: { name: dto.role } });
+      if (!roleExists) throw new AppError(400, "unknown_role", `Unknown role: ${dto.role}`);
+    }
     try {
       const user = await prisma.$transaction(async (tx) => {
         await tx.staff.update({

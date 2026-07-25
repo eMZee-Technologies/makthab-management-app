@@ -17,10 +17,20 @@
  *   Expense                        -> Expense
  * Skipped: "Copy of ..." duplicates, "Price Distribution ...", "Summary".
  *
- * Idempotent: every write is an upsert keyed on a unique field, so re-running
- * updates in place without creating duplicates.
+ * Idempotent: every write is matched against existing rows and updated in
+ * place rather than duplicated.
  *   Student       admissionNo
- *   FeePayment    receiptNo  (admission: ADM-<admNo>;  monthly: MF-<admNo>-<yyyy>-<mm>)
+ *   FeePayment    matched by [studentId, feeType] (admission) or
+ *                 [studentId, feeType, feeYear, feeMonth] (monthly) — NOT by
+ *                 receiptNo. receiptNo is regenerated every run using the
+ *                 same running-sequence scheme as live receipts (see
+ *                 nextReceiptNo in src/lib/docNo.ts):
+ *                   admission: ADM-<admNo>-<yyyy>-<seq>
+ *                   monthly:   MF-<admNo>-<yyyymm>-<seq>
+ *                 `seq` is one running receipt-book sequence per type,
+ *                 assigned in chronological order (admission: sheet row
+ *                 order; monthly: fee period, then row order within period)
+ *                 — not derived from DB state, so it's stable across reruns.
  *   Staff         (matched by fullName)
  *   SalaryPayment [staffId, salaryMonth, salaryYear]
  *   Expense       voucherNo  (LEG-EXP-<row>)
@@ -266,7 +276,8 @@ async function migrateAdmissionFees(
 ) {
   // Header row 6; data from row 7.
   let created = 0,
-    skipped = 0;
+    skipped = 0,
+    seq = 0;
   for (let r = 7; r <= ws.rowCount; r++) {
     const row = rowValues(ws, r);
     const admissionNo = row[1]?.trim();
@@ -278,7 +289,8 @@ async function migrateAdmissionFees(
     }
     const date = cellDate(ws.getRow(r).getCell(3).value) ?? new Date();
     const amount = toFloat(ws.getRow(r).getCell(4).value);
-    const receiptNo = `ADM-${admissionNo}`;
+    seq++;
+    const receiptNo = `ADM-${admissionNo}-${date.getFullYear()}-${String(seq).padStart(4, "0")}`;
     const data = {
       receiptNo,
       studentId,
@@ -291,7 +303,9 @@ async function migrateAdmissionFees(
       paymentMethod: toMethod(row[8] ?? ""),
       collectedById,
     };
-    await prisma.feePayment.upsert({ where: { receiptNo }, update: data, create: data });
+    const existing = await prisma.feePayment.findFirst({ where: { studentId, feeType: "admission" } });
+    if (existing) await prisma.feePayment.update({ where: { id: existing.id }, data });
+    else await prisma.feePayment.create({ data });
     created++;
   }
   console.log(`  Admission fees: ${created} upserted, ${skipped} skipped (unknown student)`);
@@ -312,6 +326,10 @@ async function migrateMonthlyFees(
   ws: ExcelJS.Worksheet,
   idByAdm: Map<string, number>,
   collectedById: number,
+  // Shared across every sheet/call so the receipt-book sequence is one
+  // continuous run (matching the live global-sequence scheme), not reset
+  // per sheet or per student.
+  seqRef: { n: number },
 ) {
   // Group labels on row 5 (merged, forward-filled); sub-headers row 6; data row 7+.
   // Fixed student columns: 1=admNo 2=name 6=class. Repeating 4-col fee groups from col 7.
@@ -326,19 +344,24 @@ async function migrateMonthlyFees(
     return 0;
   }
 
+  // Period outer, student inner: mirrors a receipt book being issued in
+  // calendar order (all of a month's receipts before the next month's),
+  // not "one student's whole history, then the next student's".
   let created = 0;
-  for (let r = 7; r <= ws.rowCount; r++) {
-    const admissionNo = cellText(ws.getRow(r).getCell(1).value).trim();
-    if (!isStudentId(admissionNo)) continue;
-    const studentId = idByAdm.get(admissionNo);
-    if (!studentId) continue;
+  for (const g of groups) {
+    for (let r = 7; r <= ws.rowCount; r++) {
+      const admissionNo = cellText(ws.getRow(r).getCell(1).value).trim();
+      if (!isStudentId(admissionNo)) continue;
+      const studentId = idByAdm.get(admissionNo);
+      if (!studentId) continue;
 
-    for (const g of groups) {
       const amount = toFloat(ws.getRow(r).getCell(g.base + 2).value);
       if (amount <= 0) continue; // no payment that month
       const payDate = cellDate(ws.getRow(r).getCell(g.base).value) ?? new Date(g.year, g.month - 1, 1);
       const mode = cellText(ws.getRow(r).getCell(g.base + 3).value);
-      const receiptNo = `MF-${admissionNo}-${g.year}-${String(g.month).padStart(2, "0")}`;
+      seqRef.n++;
+      const period = `${g.year}${String(g.month).padStart(2, "0")}`;
+      const receiptNo = `MF-${admissionNo}-${period}-${String(seqRef.n).padStart(4, "0")}`;
       const data = {
         receiptNo,
         studentId,
@@ -351,7 +374,11 @@ async function migrateMonthlyFees(
         paymentMethod: toMethod(mode),
         collectedById,
       };
-      await prisma.feePayment.upsert({ where: { receiptNo }, update: data, create: data });
+      const existing = await prisma.feePayment.findFirst({
+        where: { studentId, feeType: "monthly", feeYear: g.year, feeMonth: g.month },
+      });
+      if (existing) await prisma.feePayment.update({ where: { id: existing.id }, data });
+      else await prisma.feePayment.create({ data });
       created++;
     }
   }
@@ -474,9 +501,10 @@ async function main() {
   await migrateAdmissionFees(sheet("Admission Fees Details"), idByAdm, actorStaffId);
 
   console.log("\n== Monthly fees ==");
+  const monthlySeq = { n: 0 };
   for (const name of ["AY- 2024-2025 Monthly Fees", "AY- 2025-2026 Monthly Fees", "AY- 2026-2027 Monthly Fees"]) {
     const ws = wb.getWorksheet(name);
-    if (ws) await migrateMonthlyFees(ws, idByAdm, actorStaffId);
+    if (ws) await migrateMonthlyFees(ws, idByAdm, actorStaffId, monthlySeq);
     else console.log(`  (sheet "${name}" not present)`);
   }
 

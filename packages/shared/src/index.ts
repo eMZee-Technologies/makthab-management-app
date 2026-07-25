@@ -10,3 +10,5 @@ export * from "./schemas/attendance";
 export * from "./schemas/finance";
 export * from "./schemas/report";
 export * from "./schemas/user";
+export * from "./schemas/orgProfile";
+export * from "./schemas/role";

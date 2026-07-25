@@ -7,13 +7,47 @@ async function main() {
   // --- Org profile (letterhead printed on every PDF/XLSX report) ---
   await prisma.orgProfile.upsert({
     where: { id: 1 },
-    update: {},
+    update: { isActive: true },
     create: {
       id: 1,
       name: "Masjid-O-Madarasa Umar-E-Farooq",
       address: "20th Main, 8th Cross, BTM Layout, 1st Stage, Bangalore-560068",
+      isActive: true,
     },
   });
+  // Backfill: if some other row was marked active, keep the single-active invariant.
+  await prisma.orgProfile.updateMany({ where: { id: { not: 1 } }, data: { isActive: false } });
+
+  // --- System roles + permission sets (regression-critical: these MUST
+  // reproduce the pre-permission-system route access exactly). Keys are defined
+  // in @makthab/shared PERMISSION_CATALOG; the sets below are inlined so the
+  // seed is self-contained and auditable. ---
+  const systemRoles: { name: string; permissions: string[] }[] = [
+    {
+      name: "Admin",
+      permissions: [
+        "students.manage",
+        "classes.manage",
+        "fees.manage",
+        "attendance.mark",
+        "finance.manage",
+        "reports.access",
+        "users.manage",
+        "roles.manage",
+        "org.manage",
+        "admin.access",
+      ],
+    },
+    { name: "Accountant", permissions: ["fees.manage", "finance.manage", "reports.access"] },
+    { name: "Teacher", permissions: ["attendance.mark"] },
+  ];
+  for (const r of systemRoles) {
+    await prisma.role.upsert({
+      where: { name: r.name },
+      update: { permissions: JSON.stringify(r.permissions), isSystem: true },
+      create: { name: r.name, permissions: JSON.stringify(r.permissions), isSystem: true },
+    });
+  }
 
   // --- Academic years (BUILD_CONTRACT §5) ---
   const years = [

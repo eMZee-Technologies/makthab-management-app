@@ -14,7 +14,9 @@
     "reports": "التقارير",
     "finance": "المالية",
     "classes": "الصفوف",
-    "users": "المستخدمون"
+    "users": "المستخدمون",
+    "organisation": "المؤسسة",
+    "roles": "الأدوار"
   },
   "common": {
     "search": "بحث",
@@ -262,5 +264,36 @@
     "monthlyFee": "رسوم شهرية",
     "admissionFee": "رسوم التسجيل",
     "netBalance": "الرصيد الصافي"
+  },
+  "org": {
+    "title": "المؤسسة",
+    "add": "إضافة مؤسسة",
+    "edit": "تعديل المؤسسة",
+    "name": "الاسم",
+    "address": "العنوان",
+    "headerImage": "صورة الترويسة",
+    "headerImageHint": "تظهر خلف الاسم في ترويسة التطبيق (JPEG أو PNG أو WebP).",
+    "active": "نشطة",
+    "setActive": "تعيين كنشطة",
+    "activated": "تم تحديث المؤسسة النشطة",
+    "created": "تمت إضافة المؤسسة بنجاح",
+    "updated": "تم تحديث المؤسسة بنجاح",
+    "deleted": "تم حذف المؤسسة بنجاح",
+    "confirmDeleteTitle": "حذف المؤسسة",
+    "confirmDelete": "حذف {{name}}؟ لا يمكن التراجع عن هذا الإجراء."
+  },
+  "roles": {
+    "title": "الأدوار",
+    "add": "إضافة دور",
+    "edit": "تعديل الدور",
+    "name": "اسم الدور",
+    "permissions": "الصلاحيات",
+    "system": "نظامي",
+    "systemHint": "دور مدمج — لا يمكن حذفه.",
+    "created": "تمت إضافة الدور بنجاح",
+    "updated": "تم تحديث الدور بنجاح",
+    "deleted": "تم حذف الدور بنجاح",
+    "confirmDeleteTitle": "حذف الدور",
+    "confirmDelete": "حذف الدور {{name}}؟ لا يمكن التراجع عن هذا الإجراء."
   }
 }

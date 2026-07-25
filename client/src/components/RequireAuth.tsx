@@ -1,6 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
-import type { Role } from '@/store/authStore';
 
 /** Gate that redirects unauthenticated users to /login. */
 export function RequireAuth() {
@@ -13,10 +12,10 @@ export function RequireAuth() {
   return <Outlet />;
 }
 
-/** Gate that restricts a route subtree to specific roles. */
-export function RequireRole({ roles }: { roles: Role[] }) {
-  const role = useAuthStore((s) => s.user?.role);
-  if (!role || !roles.includes(role)) {
+/** Gate that restricts a route subtree to holders of a permission key. */
+export function RequirePermission({ permission }: { permission: string }) {
+  const permissions = useAuthStore((s) => s.user?.permissions);
+  if (!permissions?.includes(permission)) {
     return <Navigate to="/" replace />;
   }
   return <Outlet />;

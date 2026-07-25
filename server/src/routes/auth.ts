@@ -1,8 +1,9 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { loginRequestSchema, refreshRequestSchema, type Role } from "@makthab/shared";
+import { loginRequestSchema, refreshRequestSchema } from "@makthab/shared";
 import { prisma } from "../lib/prisma";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt";
+import { resolvePermissions } from "../lib/permissions";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
 import { AppError } from "../middleware/errorHandler";
@@ -27,12 +28,14 @@ authRouter.post(
       throw new AppError(401, "invalid_credentials", "Invalid username or password");
     }
 
-    const role = user.role as Role;
+    const role = user.role;
+    const permissions = await resolvePermissions(role);
     const accessToken = signAccessToken({
       sub: user.id,
       staffId: user.staffId,
       username: user.username,
       role,
+      permissions,
     });
     const refreshToken = signRefreshToken(user.id);
 
@@ -40,7 +43,7 @@ authRouter.post(
       data: {
         accessToken,
         refreshToken,
-        user: { id: user.id, fullName: user.staff.fullName, username: user.username, role },
+        user: { id: user.id, fullName: user.staff.fullName, username: user.username, role, permissions },
       },
     });
   })
@@ -62,18 +65,20 @@ authRouter.post(
     if (!user || user.status !== "active") {
       throw new AppError(401, "unauthorized", "User no longer active");
     }
-    const role = user.role as Role;
+    const role = user.role;
+    const permissions = await resolvePermissions(role);
     const accessToken = signAccessToken({
       sub: user.id,
       staffId: user.staffId,
       username: user.username,
       role,
+      permissions,
     });
     res.json({
       data: {
         accessToken,
         refreshToken: signRefreshToken(user.id),
-        user: { id: user.id, fullName: user.staff.fullName, username: user.username, role },
+        user: { id: user.id, fullName: user.staff.fullName, username: user.username, role, permissions },
       },
     });
   })

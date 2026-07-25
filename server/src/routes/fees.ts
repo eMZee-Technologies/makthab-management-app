@@ -14,7 +14,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireRole } from "../middleware/auth";
+import { requireAuth, requirePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextReceiptNo } from "../lib/docNo";
@@ -27,7 +27,7 @@ import { RECEIPTS_DIR, FILES_DIR, ensureDir } from "../lib/paths";
 
 export const feesRouter = Router();
 
-feesRouter.use(requireAuth, requireRole("Admin", "Accountant"));
+feesRouter.use(requireAuth, requirePermission("fees.manage"));
 
 type FeeWithStudent = Awaited<ReturnType<typeof loadFee>>;
 async function loadFee(id: number) {
@@ -69,6 +69,17 @@ function periodLabel(feeMonth: number | null, feeYear: number): string {
 function formatReceiptDate(d: Date | string): string {
   const date = new Date(d);
   return `${String(date.getUTCDate()).padStart(2, "0")}-${MONTH_ABBR[date.getUTCMonth()]}-${date.getUTCFullYear()}`;
+}
+
+// The period clause of the WhatsApp caption, branched by fee type:
+//   monthly   -> "for Period of June 2026"
+//   admission -> "for Admission Year 2024"
+//   annual/other/anything else -> "for Annual Fee 2026" (a coherent
+//     type-labelled fallback the user didn't specify a wording for).
+function captionPeriodClause(feeType: string, feeMonth: number | null, feeYear: number): string {
+  if (feeType === "monthly") return `for Period of ${periodLabel(feeMonth, feeYear)}`;
+  if (feeType === "admission") return `for Admission Year ${feeYear}`;
+  return `for ${feeTypeLabel(feeType)} ${feeYear}`;
 }
 
 async function receiptPdf(fee: NonNullable<FeeWithStudent>): Promise<Buffer> {
@@ -414,8 +425,9 @@ feesRouter.post(
       throw new AppError(400, "no_whatsapp_number", "Student has no WhatsApp number on file");
     }
     const caption =
-      `Assalamu Alaikum. Fee receipt ${fee.receiptNo} for ${fee.student.fullName}: ` +
-      `${fee.amountPaid.toFixed(2)} paid on ${new Date(fee.paymentDate).toISOString().slice(0, 10)}. JazakAllah.`;
+      `Assalamu Alaikum. Fee receipt ${fee.receiptNo} for ${fee.student.fullName} ` +
+      `${captionPeriodClause(fee.feeType, fee.feeMonth, fee.feeYear)}: ` +
+      `₹ ${fee.amountPaid.toFixed(2)}/- paid on ${formatReceiptDate(fee.paymentDate)}. JazakAllah.`;
 
     if (env.whatsappGateway === "business-api") {
       const pdf = fee.pdfPath && fs.existsSync(fee.pdfPath) ? fs.readFileSync(fee.pdfPath) : await receiptPdf(fee);

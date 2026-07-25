@@ -202,8 +202,25 @@ model FeeStructure {
 // FK here (or make this row the tenant record itself) and scope the lookup
 // by req.tenantId instead of "the one row".
 model OrgProfile {
-  id        Int      @id @default(autoincrement())
-  name      String
-  address   String
-  updatedAt DateTime @updatedAt
+  id              Int      @id @default(autoincrement())
+  name            String
+  address         String
+  isActive        Boolean  @default(false)
+  headerImagePath String? // web app-header background only; NOT embedded in the ASCII PDF writer
+  updatedAt       DateTime @updatedAt
+}
+
+// Application role with an attached permission set. Replaces the former
+// hardcoded 3-value role enum: Admin can now define new roles at runtime.
+// `permissions` is a JSON-encoded array of permission-key strings (see
+// @makthab/shared PERMISSION_CATALOG). isSystem rows (Admin/Accountant/Teacher)
+// are seeded and cannot be deleted. User.role stores the role NAME (unchanged),
+// which is resolved to a permission set at login.
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  permissions String // JSON-encoded string[] of permission keys
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

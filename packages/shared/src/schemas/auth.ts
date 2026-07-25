@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { RoleSchema } from "./common";
 
 // POST /auth/login
 export const loginRequestSchema = z.object({
@@ -8,11 +7,15 @@ export const loginRequestSchema = z.object({
 });
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 
+// role is a plain string now that roles are DB-backed and admin-definable (no
+// longer the fixed 3-value enum). permissions is the resolved permission-key
+// set for the logged-in user — the source of truth for client-side gating.
 export const authUserSchema = z.object({
   id: z.number().int(),
   fullName: z.string(),
   username: z.string(),
-  role: RoleSchema,
+  role: z.string(),
+  permissions: z.array(z.string()),
 });
 export type AuthUser = z.infer<typeof authUserSchema>;
 

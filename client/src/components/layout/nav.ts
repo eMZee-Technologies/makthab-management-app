@@ -7,29 +7,33 @@ import {
   CalendarCheck,
   Wallet,
   FileBarChart,
+  Building2,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
-import type { Role } from '@/store/authStore';
-
 export interface NavItem {
   to: string;
   labelKey: string;
   icon: LucideIcon;
-  /** Roles allowed to see this item. Empty = all authenticated users. */
-  roles?: Role[];
+  /** Permission key required to see this item. Empty = all authenticated users. */
+  permission?: string;
 }
 
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
   { to: '/students', labelKey: 'nav.students', icon: Users },
-  { to: '/classes', labelKey: 'nav.classes', icon: GraduationCap, roles: ['Admin'] },
-  { to: '/fees', labelKey: 'nav.fees', icon: ReceiptIndianRupee, roles: ['Admin', 'Accountant'] },
-  { to: '/attendance', labelKey: 'nav.attendance', icon: CalendarCheck, roles: ['Admin', 'Teacher'] },
-  { to: '/finance', labelKey: 'nav.finance', icon: Wallet, roles: ['Admin', 'Accountant'] },
-  { to: '/reports', labelKey: 'nav.reports', icon: FileBarChart, roles: ['Admin', 'Accountant'] },
-  { to: '/users', labelKey: 'nav.users', icon: UserCog, roles: ['Admin'] },
+  { to: '/classes', labelKey: 'nav.classes', icon: GraduationCap, permission: 'classes.manage' },
+  { to: '/fees', labelKey: 'nav.fees', icon: ReceiptIndianRupee, permission: 'fees.manage' },
+  { to: '/attendance', labelKey: 'nav.attendance', icon: CalendarCheck, permission: 'attendance.mark' },
+  { to: '/finance', labelKey: 'nav.finance', icon: Wallet, permission: 'finance.manage' },
+  { to: '/reports', labelKey: 'nav.reports', icon: FileBarChart, permission: 'reports.access' },
+  { to: '/users', labelKey: 'nav.users', icon: UserCog, permission: 'users.manage' },
+  { to: '/organisation', labelKey: 'nav.organisation', icon: Building2, permission: 'org.manage' },
+  { to: '/roles', labelKey: 'nav.roles', icon: ShieldCheck, permission: 'roles.manage' },
 ];
 
-export function visibleNavItems(role: Role | undefined): NavItem[] {
-  return NAV_ITEMS.filter((item) => !item.roles || (role && item.roles.includes(role)));
+export function visibleNavItems(permissions: string[] | undefined): NavItem[] {
+  return NAV_ITEMS.filter(
+    (item) => !item.permission || (permissions?.includes(item.permission) ?? false),
+  );
 }

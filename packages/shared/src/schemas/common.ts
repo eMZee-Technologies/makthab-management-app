@@ -1,8 +1,14 @@
 import { z } from "zod";
 
-// Roles used across auth + access control (BUILD_CONTRACT §6).
+// Legacy fixed role vocabulary (the three seeded system roles). Retained for
+// display/reference; access control is now permission-key based (see role.ts).
 export const RoleSchema = z.enum(["Admin", "Accountant", "Teacher"]);
 export type Role = z.infer<typeof RoleSchema>;
+
+// Role NAME for user-login assignment. Roles are DB-backed and admin-definable,
+// so a login can be assigned any existing role name (validated against the Role
+// table server-side), not just the three seeded ones.
+export const roleNameSchema = z.string().trim().min(1);
 
 // Reusable primitives.
 export const idParam = z.coerce.number().int().positive();

@@ -24,6 +24,7 @@ import {
 } from '@/lib/schemas';
 import { api, extractApiError } from '@/api/client';
 import { useAddUser, useUpdateUser } from './api';
+import { useRoles } from '../roles/api';
 import { useUploadStaffPhoto, useUploadStaffSignature } from '../finance/api';
 import type { User } from '@/types/domain';
 
@@ -32,8 +33,6 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   user?: User | null;
 }
-
-const ROLES = ['Admin', 'Accountant', 'Teacher'] as const;
 
 export function UserForm({ open, onOpenChange, user }: Props) {
   const { t } = useTranslation();
@@ -45,6 +44,7 @@ export function UserForm({ open, onOpenChange, user }: Props) {
   const uploadPhoto = useUploadStaffPhoto();
   const uploadSignature = useUploadStaffSignature();
   const mutation = isEdit ? update : add;
+  const { data: roles } = useRoles();
 
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -234,7 +234,7 @@ export function UserForm({ open, onOpenChange, user }: Props) {
             label={t('users.role')}
             error={errors.role?.message}
             required
-            options={ROLES.map((r) => ({ value: r, label: r }))}
+            options={(roles ?? []).map((r) => ({ value: r.name, label: r.name }))}
           />
           <Field label={t('users.email')} error={errors.email?.message} required>
             <Input type="email" {...register('email')} />

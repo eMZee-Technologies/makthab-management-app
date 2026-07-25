@@ -1,0 +1,47 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api, unwrap } from '@/api/client';
+import type { RoleCreateInput } from '@/lib/schemas';
+
+export interface Role {
+  id: number;
+  name: string;
+  permissions: string[];
+  isSystem: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function useRoles() {
+  return useQuery({
+    queryKey: ['roles'],
+    queryFn: async () => {
+      const payload = unwrap((await api.get('/roles')).data) as { items?: Role[] } | Role[];
+      return Array.isArray(payload) ? payload : payload.items ?? [];
+    },
+  });
+}
+
+export function useAddRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: RoleCreateInput) => unwrap<Role>((await api.post('/roles', input)).data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
+  });
+}
+
+export function useUpdateRole(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: Partial<RoleCreateInput>) =>
+      unwrap<Role>((await api.patch(`/roles/${id}`, input)).data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
+  });
+}
+
+export function useDeleteRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => (await api.delete(`/roles/${id}`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
+  });
+}

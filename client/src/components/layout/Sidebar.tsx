@@ -9,10 +9,10 @@ import { visibleNavItems } from './nav';
 
 export function Sidebar() {
   const { t } = useTranslation();
-  const role = useAuthStore((s) => s.user?.role);
+  const permissions = useAuthStore((s) => s.user?.permissions);
   const sidebarOpen = useUiStore((s) => s.sidebarOpen);
   const setSidebar = useUiStore((s) => s.setSidebar);
-  const items = visibleNavItems(role);
+  const items = visibleNavItems(permissions);
 
   return (
     <>

@@ -2,7 +2,7 @@ import type { Response } from "express";
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
-import { requireAuth, requireRole } from "../middleware/auth";
+import { requireAuth, requirePermission } from "../middleware/auth";
 import { validateQuery } from "../middleware/validate";
 import { renderPdf } from "../lib/pdf";
 import { renderXlsx, XLSX_CONTENT_TYPE } from "../lib/excel";
@@ -24,7 +24,10 @@ import {
 } from "@makthab/shared";
 
 export const reportsRouter = Router();
-reportsRouter.use(requireAuth, requireRole("Admin", "Accountant"));
+// B5: reports are gated by the `reports.access` permission (held by Admin +
+// Accountant, and grantable to any custom "management" role) rather than a
+// hardcoded role list.
+reportsRouter.use(requireAuth, requirePermission("reports.access"));
 
 
 // Aggregate a single year's monthly-fee payments by month (all 12, zero-filled).

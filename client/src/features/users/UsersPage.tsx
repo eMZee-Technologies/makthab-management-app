@@ -22,11 +22,10 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/ui/use-toast';
 import { api, extractApiError } from '@/api/client';
 import { useUsers, useDeleteUser, useReactivateUser } from './api';
+import { useRoles } from '../roles/api';
 import { UserForm } from './UserForm';
 import { ResetPasswordDialog } from './ResetPasswordDialog';
 import type { User } from '@/types/domain';
-
-const ROLES = ['Admin', 'Accountant', 'Teacher'] as const;
 
 function initials(name?: string) {
   if (!name) return '?';
@@ -85,6 +84,7 @@ export function UsersPage() {
 
   const del = useDeleteUser();
   const reactivate = useReactivateUser();
+  const { data: roles } = useRoles();
 
   const { data, isLoading, isError, refetch } = useUsers({
     role: role !== 'all' ? role : undefined,
@@ -155,9 +155,9 @@ export function UsersPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t('common.all')}</SelectItem>
-                {ROLES.map((r) => (
-                  <SelectItem key={r} value={r}>
-                    {r}
+                {(roles ?? []).map((r) => (
+                  <SelectItem key={r.id} value={r.name}>
+                    {r.name}
                   </SelectItem>
                 ))}
               </SelectContent>

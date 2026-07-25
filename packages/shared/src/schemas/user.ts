@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { phoneSchema, sortOrderSchema, RoleSchema, studentStatusSchema } from "./common";
+import { phoneSchema, sortOrderSchema, roleNameSchema, studentStatusSchema } from "./common";
 
 // UserCreateDto — POST /users. A "new user" provisions a Staff record and a
 // linked User login together (contactNo/whatsappNo/address live on Staff;
@@ -9,7 +9,7 @@ export const userCreateSchema = z.object({
   username: z.string().trim().min(3),
   password: z.string().min(6),
   email: z.string().trim().email(),
-  role: RoleSchema,
+  role: roleNameSchema,
   contactNo: phoneSchema,
   whatsappNo: phoneSchema,
   address: z.string().trim().optional(),
@@ -24,7 +24,7 @@ export const userUpdateSchema = z
   .object({
     fullName: z.string().trim().min(1),
     email: z.string().trim().email(),
-    role: RoleSchema,
+    role: roleNameSchema,
     contactNo: phoneSchema,
     whatsappNo: phoneSchema,
     address: z.string().trim(),
@@ -55,7 +55,7 @@ export const userListQuery = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
   sortBy: userSortField.optional(),
   sortOrder: sortOrderSchema.default("asc"),
-  role: RoleSchema.optional(),
+  role: roleNameSchema.optional(),
   status: studentStatusSchema.optional(),
 });
 export type UserListQuery = z.infer<typeof userListQuery>;

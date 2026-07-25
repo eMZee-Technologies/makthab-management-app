@@ -170,3 +170,47 @@ export function uploadStaffSignature(req: Request, res: Response, next: NextFunc
     next();
   });
 }
+
+// Org-profile header image (web app-header background only — NOT embedded in the
+// ASCII PDF writer), so it follows the same JPEG/PNG/WebP rules as photos, keyed
+// off the org profile id (org-${id}-${ts}).
+const orgImageStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    cb(null, ensureDir(PHOTOS_DIR));
+  },
+  filename: (req, file, cb) => {
+    void (async () => {
+      const id = Number(req.params.id);
+      const org = await prisma.orgProfile.findUnique({ where: { id }, select: { id: true } });
+      if (!org) {
+        return cb(new AppError(404, "not_found", "Organisation profile not found"), "");
+      }
+      const ext = ALLOWED_TYPES.get(file.mimetype) ?? path.extname(file.originalname);
+      cb(null, `org-${org.id}-${Date.now()}${ext}`);
+    })().catch((err) => cb(err as Error, ""));
+  },
+});
+
+const orgImageUpload = multer({
+  storage: orgImageStorage,
+  limits: { fileSize: MAX_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (!ALLOWED_TYPES.has(file.mimetype)) {
+      return cb(new AppError(400, "invalid_file", "Only JPEG, PNG, or WebP images are allowed"));
+    }
+    cb(null, true);
+  },
+});
+
+export function uploadOrgImage(req: Request, res: Response, next: NextFunction) {
+  orgImageUpload.single("image")(req, res, (err: unknown) => {
+    if (err instanceof MulterError) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return next(new AppError(400, "file_too_large", "Image must be 3MB or smaller"));
+      }
+      return next(new AppError(400, "upload_error", err.message));
+    }
+    if (err) return next(err);
+    next();
+  });
+}

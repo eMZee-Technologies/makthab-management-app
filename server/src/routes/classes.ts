@@ -3,7 +3,7 @@ import { classCreateSchema, classUpdateSchema } from "@makthab/shared";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
-import { requireAuth, requireRole } from "../middleware/auth";
+import { requireAuth, requirePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 
 export const classesRouter = Router();
@@ -13,7 +13,7 @@ classesRouter.use(requireAuth);
 // POST /classes — create a class (Admin only).
 classesRouter.post(
   "/",
-  requireRole("Admin"),
+  requirePermission("classes.manage"),
   validateBody(classCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof classCreateSchema._output;
@@ -30,7 +30,7 @@ classesRouter.post(
 // PATCH /classes/:id — update name/teacherId (Admin only).
 classesRouter.patch(
   "/:id",
-  requireRole("Admin"),
+  requirePermission("classes.manage"),
   validateBody(classUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -53,7 +53,7 @@ classesRouter.patch(
 // DELETE /classes/:id — hard delete, blocked if any student references it.
 classesRouter.delete(
   "/:id",
-  requireRole("Admin"),
+  requirePermission("classes.manage"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const exists = await prisma.class.findUnique({ where: { id } });

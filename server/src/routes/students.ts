@@ -10,7 +10,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireRole } from "../middleware/auth";
+import { requireAuth, requirePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { renderPdf } from "../lib/pdf";
 import { getOrgHeader } from "../lib/orgProfile";
@@ -71,7 +71,7 @@ studentsRouter.get(
 // POST /students — admit a student (Admin only; §6 roles).
 studentsRouter.post(
   "/",
-  requireRole("Admin"),
+  requirePermission("students.manage"),
   validateBody(studentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof studentCreateSchema._output;
@@ -144,7 +144,7 @@ studentsRouter.get(
 // PATCH /students/:id — update fields (Admin only).
 studentsRouter.patch(
   "/:id",
-  requireRole("Admin"),
+  requirePermission("students.manage"),
   validateBody(studentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -166,7 +166,7 @@ studentsRouter.patch(
 // (double-click, retry) should succeed quietly rather than surface an error.
 studentsRouter.delete(
   "/:id",
-  requireRole("Admin"),
+  requirePermission("students.manage"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const exists = await prisma.student.findUnique({ where: { id } });
@@ -213,7 +213,7 @@ studentsRouter.get(
 // POST /students/:id/photo — upload/replace the student photo (Admin only).
 studentsRouter.post(
   "/:id/photo",
-  requireRole("Admin"),
+  requirePermission("students.manage"),
   uploadStudentPhoto,
   asyncHandler(async (req, res) => {
     if (!req.file) {

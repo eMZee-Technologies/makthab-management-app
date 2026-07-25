@@ -19,7 +19,7 @@ import {
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireRole } from "../middleware/auth";
+import { requireAuth, requireRole, requirePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextVoucherNo } from "../lib/docNo";
@@ -28,7 +28,7 @@ import { uploadStaffPhoto, uploadStaffSignature, photoContentType } from "../lib
 
 // ---- Expenses (Admin, Accountant) ------------------------------------------
 export const expensesRouter = Router();
-expensesRouter.use(requireAuth, requireRole("Admin", "Accountant"));
+expensesRouter.use(requireAuth, requirePermission("finance.manage"));
 
 expensesRouter.post(
   "/",
@@ -167,7 +167,7 @@ expensesRouter.get(
 
 // ---- Staff (Admin, Accountant) ---------------------------------------------
 export const staffRouter = Router();
-staffRouter.use(requireAuth, requireRole("Admin", "Accountant"));
+staffRouter.use(requireAuth, requirePermission("finance.manage"));
 
 staffRouter.get(
   "/",
@@ -351,7 +351,7 @@ staffRouter.get(
 
 // ---- Salaries (Admin, Accountant) ------------------------------------------
 export const salariesRouter = Router();
-salariesRouter.use(requireAuth, requireRole("Admin", "Accountant"));
+salariesRouter.use(requireAuth, requirePermission("finance.manage"));
 
 salariesRouter.get(
   "/",
