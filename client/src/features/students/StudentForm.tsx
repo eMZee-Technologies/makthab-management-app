@@ -78,12 +78,13 @@ export function StudentForm({ open, onOpenChange, student }: Props) {
           whatsappNo: student.whatsappNo,
           address: student.address ?? undefined,
           classId: student.classId,
-          categoryId: student.categoryId ?? undefined,
+          categoryId: student.categoryId ?? null,
           academicYearId: student.academicYearId,
           status: student.status === 'inactive' ? 'inactive' : 'active',
         } as StudentCreateInput)
       : ({
           gender: 'male',
+          categoryId: null,
           academicYearId: academicYearId ?? undefined,
           status: 'active',
         } as Partial<StudentCreateInput> as StudentCreateInput);
@@ -100,7 +101,7 @@ export function StudentForm({ open, onOpenChange, student }: Props) {
   useEffect(() => {
     if (classId === lastResetClassId.current) return;
     lastResetClassId.current = classId;
-    setValue('categoryId', undefined);
+    setValue('categoryId', null);
   }, [classId, setValue]);
 
   // Load an existing student's photo for the preview (authed blob fetch — a plain
@@ -231,16 +232,13 @@ export function StudentForm({ open, onOpenChange, student }: Props) {
             placeholder={t('common.all')}
             options={(classes ?? []).map((c) => ({ value: c.id, label: c.name }))}
           />
-          {categoryOptions.length > 0 && (
-            <SelectField
-              name="categoryId"
-              control={control}
-              label={t('students.category')}
-              error={errors.categoryId?.message}
-              required
-              options={categoryOptions}
-            />
-          )}
+          <SelectField
+            name="categoryId"
+            control={control}
+            label={t('students.category')}
+            error={errors.categoryId?.message}
+            options={categoryOptions}
+          />
           <SelectField
             name="academicYearId"
             control={control}

@@ -41,7 +41,7 @@ export interface Student {
   admissionNo: string;
   fullName: string;
   fatherName: string;
-  dateOfBirth: string;
+  dateOfBirth: string | null;
   gender: string;
   contactNo: string;
   whatsappNo: string;

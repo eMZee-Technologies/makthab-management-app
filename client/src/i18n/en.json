@@ -82,6 +82,7 @@
     "fullName": "Full Name",
     "fatherName": "Father's Name",
     "dateOfBirth": "Date of Birth",
+    "age": "Age",
     "gender": "Gender",
     "male": "Male",
     "female": "Female",

@@ -30,9 +30,13 @@ export const studentCreateSchema = z.object({
   whatsappNo: z.string().trim().min(7, 'Enter a valid number'),
   address: z.string().trim().optional(),
   classId: z.coerce.number().int().positive('Select a class'),
-  categoryId: z
-    .preprocess((v) => (v === '' || v == null ? undefined : v), z.coerce.number().int().positive())
-    .optional(),
+  // Always resolves to number|null (never undefined) so the PATCH body carries an
+  // explicit categoryId — an omitted key makes the server keep the old category
+  // and reject the move to a class that doesn't offer it.
+  categoryId: z.preprocess(
+    (v) => (v === '' || v == null ? null : v),
+    z.coerce.number().int().positive().nullable(),
+  ),
   academicYearId: z.coerce.number().int().positive('Select a year'),
   status: studentStatusSchema.default('active'),
 });

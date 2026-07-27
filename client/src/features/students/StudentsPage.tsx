@@ -22,7 +22,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useClasses } from '@/api/reference';
 import { useUiStore } from '@/store/uiStore';
 import { useDebounce } from '@/lib/useDebounce';
-import { formatDate } from '@/lib/format';
+import { formatDate, computeAge } from '@/lib/format';
 import { extractApiError } from '@/api/client';
 import { useAuthStore } from '@/store/authStore';
 import { useStudents, useDeleteStudent, downloadAdmissionLetter } from './api';
@@ -163,7 +163,7 @@ export function StudentsPage() {
           </div>
 
           {isLoading ? (
-            <LoadingRows cols={9} />
+            <LoadingRows cols={10} />
           ) : isError ? (
             <ErrorState onRetry={refetch} />
           ) : !data || data.items.length === 0 ? (
@@ -182,6 +182,7 @@ export function StudentsPage() {
                   <SortableTableHead sortKey="fatherName" sort={sort} onSort={onSort}>
                     {t('students.fatherName')}
                   </SortableTableHead>
+                  <TableHead>{t('students.age')}</TableHead>
                   <TableHead>{t('students.contactNo')}</TableHead>
                   <SortableTableHead sortKey="class" sort={sort} onSort={onSort}>
                     {t('students.class')}
@@ -200,6 +201,7 @@ export function StudentsPage() {
                     <TableCell>{s.admissionDate ? formatDate(s.admissionDate, i18n.language) : '—'}</TableCell>
                     <TableCell>{s.fullName}</TableCell>
                     <TableCell>{s.fatherName}</TableCell>
+                    <TableCell className="whitespace-nowrap">{computeAge(s.dateOfBirth)}</TableCell>
                     <TableCell>{s.contactNo ?? '—'}</TableCell>
                     <TableCell>{s.class?.name ?? s.classId}</TableCell>
                     <TableCell>{s.category?.name ?? '—'}</TableCell>
