@@ -10,6 +10,7 @@ shared Zod schemas in `packages/shared`.
 | Folder | Contents |
 |---|---|
 | [`architecture/`](./architecture) | System & React/TS architecture docs, diagrams, and the build contract (single source of truth for the API/data model). |
+| [`architecture/redesign/`](./architecture/redesign) | **Proposal, not implemented.** Phased re-architecture plan (multi-DB, multi-tenant, security hardening, AWS deployment, UI redesign) — start at [redesign/00-overview-and-prioritization.md](./architecture/redesign/00-overview-and-prioritization.md). |
 | [`migration/`](./migration) | How the legacy spreadsheet data was imported — see [MIGRATION.md](./migration/MIGRATION.md) — plus the original migration plan and mapping diagram. |
 | [`reference/`](./reference) | Background study of the Maktab operation and developer context notes. |
 | [`development/`](./development) | Developer-facing guides, e.g. [TESTING.md](./development/TESTING.md). |
