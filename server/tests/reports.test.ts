@@ -57,6 +57,13 @@ describeApi("reports", () => {
   let token = "";
   let monthlyReceipt = "";
   let admissionReceipt = "";
+  // Ids of every fixture row this suite creates, hard-deleted in afterAll so a
+  // second `npx jest` run (without an intervening `prisma migrate reset`)
+  // doesn't double up ISO_YEAR/FS_YEAR/FUTURE_YEAR totals and break the
+  // exact-equality assertions below (see task #23).
+  const feePaymentIds: number[] = [];
+  let expenseId: number | undefined;
+  let salaryId: number | undefined;
 
   beforeAll(async () => {
     token = await login(CREDS.admin.username, CREDS.admin.password);
@@ -90,6 +97,7 @@ describeApi("reports", () => {
       paymentMethod: "cash",
     });
     monthlyReceipt = monthly.body?.data?.receiptNo;
+    feePaymentIds.push(monthly.body?.data?.id);
 
     const admission = await request(app()).post(`${API}/fees`).set(bearer(token)).send({
       studentId,
@@ -101,11 +109,12 @@ describeApi("reports", () => {
       paymentMethod: "cash",
     });
     admissionReceipt = admission.body?.data?.receiptNo;
+    feePaymentIds.push(admission.body?.data?.id);
 
     // A future-dated monthly payment (feeYear > current year): must surface in
     // the yearly ("all") summary now that its upper bound extends past the
     // current year when such rows exist.
-    await request(app()).post(`${API}/fees`).set(bearer(token)).send({
+    const future = await request(app()).post(`${API}/fees`).set(bearer(token)).send({
       studentId,
       feeType: "monthly",
       feeMonth: 1,
@@ -115,12 +124,13 @@ describeApi("reports", () => {
       paymentDate: `${FUTURE_YEAR}-01-05`,
       paymentMethod: "cash",
     });
+    feePaymentIds.push(future.body?.data?.id);
 
     // Self-contained fixtures for FS_YEAR so all five financial-summary line
     // items are non-zero and deterministic: monthly fee 500, admission fee 1000,
     // expense 300 (cost*quantity), salary net 1800 (gross - deductions). Fees
     // window by feeYear, salaries by salaryYear, expenses by expenseDate's year.
-    await request(app()).post(`${API}/fees`).set(bearer(token)).send({
+    const fsMonthly = await request(app()).post(`${API}/fees`).set(bearer(token)).send({
       studentId,
       feeType: "monthly",
       feeMonth: 4,
@@ -130,7 +140,8 @@ describeApi("reports", () => {
       paymentDate: `${FS_YEAR}-04-05`,
       paymentMethod: "cash",
     });
-    await request(app()).post(`${API}/fees`).set(bearer(token)).send({
+    feePaymentIds.push(fsMonthly.body?.data?.id);
+    const fsAdmission = await request(app()).post(`${API}/fees`).set(bearer(token)).send({
       studentId,
       feeType: "admission",
       feeYear: FS_YEAR,
@@ -139,13 +150,15 @@ describeApi("reports", () => {
       paymentDate: `${FS_YEAR}-04-10`,
       paymentMethod: "cash",
     });
-    await request(app()).post(`${API}/expenses`).set(bearer(token)).send({
+    feePaymentIds.push(fsAdmission.body?.data?.id);
+    const expense = await request(app()).post(`${API}/expenses`).set(bearer(token)).send({
       categoryId: 1,
       cost: FS_EXPENSES,
       quantity: 1,
       expenseDate: `${FS_YEAR}-05-10`,
       payee: "QA Report Expense",
     });
+    expenseId = expense.body?.data?.id;
     const staff = await request(app()).post(`${API}/staff`).set(bearer(token)).send({
       fullName: "QA Report Staff",
       role: "Teacher",
@@ -153,7 +166,7 @@ describeApi("reports", () => {
       contactNo: "9990004444",
       whatsappNo: "9990004444",
     });
-    await request(app()).post(`${API}/salaries`).set(bearer(token)).send({
+    const salary = await request(app()).post(`${API}/salaries`).set(bearer(token)).send({
       staffId: staff.body?.data?.id,
       salaryMonth: 6,
       salaryYear: FS_YEAR,
@@ -161,6 +174,22 @@ describeApi("reports", () => {
       deductions: 200,
       paymentDate: `${FS_YEAR}-06-30`,
     });
+    salaryId = salary.body?.data?.id;
+  });
+
+  // Hard-delete every fixture row so a second `npx jest` run against the same
+  // (non-reset) test.db doesn't double the ISO_YEAR/FS_YEAR/FUTURE_YEAR totals
+  // and break the exact-equality assertions below (task #23). The fixture
+  // student and staff row are left in place (soft-deletable only via the API,
+  // and — unlike the fee/expense/salary rows — nothing here asserts an exact
+  // count of them), matching how other suites in this file already leave
+  // their student fixtures behind.
+  afterAll(async () => {
+    for (const id of feePaymentIds) {
+      if (id != null) await request(app()).delete(`${API}/fees/${id}`).set(bearer(token));
+    }
+    if (expenseId != null) await request(app()).delete(`${API}/expenses/${expenseId}`).set(bearer(token));
+    if (salaryId != null) await request(app()).delete(`${API}/salaries/${salaryId}`).set(bearer(token));
   });
 
   // --- existing coverage (unchanged) -------------------------------------
