@@ -56,10 +56,19 @@ studentsRouter.get(
         { fatherName: { contains: q.q } },
       ];
     }
+    // "age" has no column of its own — it's derived client-side from
+    // dateOfBirth — so sort by dateOfBirth with sortOrder flipped: the oldest
+    // students have the EARLIEST dateOfBirth, so "age desc" (oldest first)
+    // means dateOfBirth ascending, and vice versa. Students with no recorded
+    // dateOfBirth (age unknown) always sort last, in either direction —
+    // otherwise SQLite's default null-is-smallest rule would put them at the
+    // "oldest" end whenever sorting age descending.
     const orderBy = q.sortBy
       ? q.sortBy === "class"
         ? { class: { name: q.sortOrder } }
-        : { [q.sortBy]: q.sortOrder }
+        : q.sortBy === "age"
+          ? { dateOfBirth: { sort: q.sortOrder === "asc" ? ("desc" as const) : ("asc" as const), nulls: "last" as const } }
+          : { [q.sortBy]: q.sortOrder }
       : { admissionNo: "asc" as const };
     const [rows, total] = await Promise.all([
       prisma.student.findMany({

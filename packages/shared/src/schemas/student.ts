@@ -38,6 +38,7 @@ export const studentSortField = z.enum([
   "fatherName",
   "status",
   "class",
+  "age",
 ]);
 export type StudentSortField = z.infer<typeof studentSortField>;
 

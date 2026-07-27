@@ -182,7 +182,9 @@ export function StudentsPage() {
                   <SortableTableHead sortKey="fatherName" sort={sort} onSort={onSort}>
                     {t('students.fatherName')}
                   </SortableTableHead>
-                  <TableHead>{t('students.age')}</TableHead>
+                  <SortableTableHead sortKey="age" sort={sort} onSort={onSort}>
+                    {t('students.age')}
+                  </SortableTableHead>
                   <TableHead>{t('students.contactNo')}</TableHead>
                   <SortableTableHead sortKey="class" sort={sort} onSort={onSort}>
                     {t('students.class')}
