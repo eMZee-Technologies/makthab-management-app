@@ -13,9 +13,9 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, formatNumber, formatDate, monthName } from '@/lib/format';
 import { downloadFile } from '@/lib/download';
 import { extractApiError } from '@/api/client';
-import { useFees } from '@/features/fees/api';
+import { useFees, useDefaulters } from '@/features/fees/api';
 import { useExpenses, useSalaries } from '@/features/finance/api';
-import type { FeePayment, Expense, SalaryPayment } from '@/types/domain';
+import type { FeePayment, Expense, SalaryPayment, Defaulter } from '@/types/domain';
 import {
   useFeeCollectionYearSummary,
   useFeeCollectionAllSummary,
@@ -828,6 +828,92 @@ function FinancialSummaryTab() {
   );
 }
 
+/** Read-only, paginated defaulter list for a month/year. */
+function ReportDefaultersTable({ month, year }: { month: number; year: number }) {
+  const { t, i18n } = useTranslation();
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [month, year]);
+
+  const { data, isLoading, isError, refetch } = useDefaulters({ month, year, page, limit });
+
+  return (
+    <>
+      {isLoading ? (
+        <LoadingRows cols={5} />
+      ) : isError ? (
+        <ErrorState onRetry={refetch} />
+      ) : !data || data.items.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('fees.admissionNo')}</TableHead>
+              <TableHead>{t('fees.student')}</TableHead>
+              <TableHead>{t('students.class')}</TableHead>
+              <TableHead className="text-end">{t('fees.amountDue')}</TableHead>
+              <TableHead className="text-end">{t('reports.contact')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.items.map((d: Defaulter) => (
+              <TableRow key={d.studentId}>
+                <TableCell className="font-medium">{d.admissionNo}</TableCell>
+                <TableCell>{d.fullName}</TableCell>
+                <TableCell>{d.className ?? '-'}</TableCell>
+                <TableCell className="text-end">{formatCurrency(d.amountDue, i18n.language)}</TableCell>
+                <TableCell className="text-end">{d.whatsappNo ? Number(d.whatsappNo) : '-'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+      {data && data.total > 0 && (
+        <Pagination
+          page={page}
+          limit={limit}
+          total={data.total}
+          onPageChange={setPage}
+          onLimitChange={(l) => {
+            setLimit(l);
+            setPage(1);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function DefaultersReportTab() {
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const download = useReportDownload();
+  const base = { month, year };
+  const filename = `Defaulters-Report-${monthName(month)}-${year}`;
+  return (
+    <ReportTabCard
+      filters={
+        <>
+          <MonthSelect month={month} onMonth={setMonth} />
+          <YearSelect year={year} onYear={setYear} />
+        </>
+      }
+      buttons={
+        <DownloadButtons
+          onPdf={() => download('defaulters', `${filename}.pdf`, base)}
+          onExcel={() => download('defaulters', `${filename}.xlsx`, { ...base, format: 'xlsx' })}
+        />
+      }
+    >
+      <ReportDefaultersTable month={month} year={year} />
+    </ReportTabCard>
+  );
+}
+
 export function ReportsPage() {
   const { t } = useTranslation();
   return (
@@ -848,9 +934,7 @@ export function ReportsPage() {
         <TabsContent value="expense"><ExpenseTab /></TabsContent>
         <TabsContent value="salaries"><SalariesTab /></TabsContent>
         <TabsContent value="financialSummary"><FinancialSummaryTab /></TabsContent>
-        <TabsContent value="defaulters">
-          <MonthYearReportTab path="defaulters" filename="defaulters" />
-        </TabsContent>
+        <TabsContent value="defaulters"><DefaultersReportTab /></TabsContent>
         <TabsContent value="attendance">
           <MonthYearReportTab path="attendance" filename="attendance" />
         </TabsContent>

@@ -52,11 +52,30 @@ async function xlsxCellValues(buf: Buffer): Promise<string[]> {
   return values;
 }
 
+// Raw (un-stringified) cell values for the first `width` columns of every
+// non-empty row, so tests can assert a cell's JS *type*, not just its text.
+async function xlsxRawRows(buf: Buffer, width: number): Promise<unknown[][]> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf as unknown as Parameters<typeof wb.xlsx.load>[0]);
+  const ws = wb.worksheets[0];
+  const rows: unknown[][] = [];
+  ws.eachRow((row) => {
+    const cells: unknown[] = [];
+    for (let c = 1; c <= width; c++) cells.push(row.getCell(c).value);
+    rows.push(cells);
+  });
+  return rows;
+}
+
 describeApi("reports", () => {
   const app = () => loadApp()!;
   let token = "";
   let monthlyReceipt = "";
   let admissionReceipt = "";
+  // The suite's fixture student: active, with no monthly payment in 7/2026, so
+  // it is guaranteed to appear as a row in the July-2026 defaulters export.
+  let studentAdmissionNo = "";
+  const STUDENT_WHATSAPP = "9990003333";
   // Ids of every fixture row this suite creates, hard-deleted in afterAll so a
   // second `npx jest` run (without an intervening `prisma migrate reset`)
   // doesn't double up ISO_YEAR/FS_YEAR/FUTURE_YEAR totals and break the
@@ -68,20 +87,22 @@ describeApi("reports", () => {
   beforeAll(async () => {
     token = await login(CREDS.admin.username, CREDS.admin.password);
     // A dedicated student for this suite's fee fixtures.
+    const admissionNo = `QA-RPT-${Date.now()}`;
     const s = await request(app())
       .post(`${API}/students`)
       .set(bearer(token))
       .send({
-        admissionNo: `QA-RPT-${Date.now()}`,
+        admissionNo,
         fullName: "Report Student",
         fatherName: "Father",
         gender: "male",
-        contactNo: "9990003333",
-        whatsappNo: "9990003333",
+        contactNo: STUDENT_WHATSAPP,
+        whatsappNo: STUDENT_WHATSAPP,
         classId: 1,
         academicYearId: 1,
       });
     const studentId = s.body?.data?.id;
+    studentAdmissionNo = admissionNo;
 
     // One monthly and one admission payment in the SAME month/year, so the
     // fee-collection report (monthly-scoped) must include the first, exclude
@@ -210,6 +231,38 @@ describeApi("reports", () => {
     const r = await request(app()).get(`${API}/reports/defaulters?month=6&year=2026`).set(bearer(token));
     expect(r.status).toBe(200);
     expect(r.headers["content-type"]).toMatch(new RegExp(`${PDF.source}|${XLSX.source}`));
+  });
+
+  // Contact rename + numeric cell + blank template columns. Uses month=7/2026,
+  // where the fixture student (created above, no monthly payment that month)
+  // is guaranteed to appear as a defaulter row.
+  it("GET /reports/defaulters?...&format=xlsx -> Contact column is numeric, Date/Amount/Mode are blank", async () => {
+    const r = await request(app())
+      .get(`${API}/reports/defaulters?month=7&year=2026&format=xlsx`)
+      .buffer()
+      .parse(binaryParser)
+      .set(bearer(token));
+    expect(r.status).toBe(200);
+    expect(r.headers["content-type"]).toMatch(XLSX);
+    const rows = await xlsxRawRows(r.body, 7);
+    const headerRow = rows.find((row) => row[0] === "Admission");
+    expect(headerRow).toEqual(["Admission", "Student", "Class", "Contact", "Date", "Amount", "Mode"]);
+    const dataRow = rows.find((row) => row[0] === studentAdmissionNo);
+    expect(dataRow).toBeDefined();
+    expect(typeof dataRow?.[3]).toBe("number");
+    expect(dataRow?.[3]).toBe(Number(STUDENT_WHATSAPP));
+    expect(dataRow?.[4]).toBe(""); // Date
+    expect(dataRow?.[5]).toBe(""); // Amount
+    expect(dataRow?.[6]).toBe(""); // Mode
+  });
+
+  it.each([
+    ["?month=7&year=2026", "inline", "Defaulters-Report-July-2026.pdf"],
+    ["?month=7&year=2026&format=xlsx", "attachment", "Defaulters-Report-July-2026.xlsx"],
+  ])("GET /reports/defaulters%s -> %s filename %s", async (query, disposition, filename) => {
+    const r = await request(app()).get(`${API}/reports/defaulters${query}`).set(bearer(token));
+    expect(r.status).toBe(200);
+    expect(r.headers["content-disposition"]).toBe(`${disposition}; filename="${filename}"`);
   });
 
   it("GET /reports/attendance?class_id&month&year -> PDF/XLSX", async () => {

@@ -390,13 +390,29 @@ reportsRouter.get(
     });
     const paidSet = new Set(paid.map((p) => p.studentId));
     const defaulters = students.filter((s) => !paidSet.has(s.id));
-    await send(res, req.query.format, {
-      title: "Defaulters Report",
-      subtitle: `${month}/${year}`,
-      headers: ["Admission", "Student", "Class", "WhatsApp"],
-      rows: defaulters.map((s) => [s.admissionNo, s.fullName, s.class?.name ?? "-", s.whatsappNo]),
-      summaryLines: [["Total Defaulters", String(defaulters.length)]],
-    });
+    await send(
+      res,
+      req.query.format,
+      {
+        title: "Defaulters Report",
+        subtitle: `${month}/${year}`,
+        // Date/Amount/Mode are left blank on purpose — staff fill them in by
+        // hand after following up with each defaulter.
+        headers: ["Admission", "Student", "Class", "Contact", "Date", "Amount", "Mode"],
+        rows: defaulters.map((s) => [
+          s.admissionNo,
+          s.fullName,
+          s.class?.name ?? "-",
+          Number(s.whatsappNo),
+          "",
+          "",
+          "",
+        ]),
+        summaryLines: [["Total Defaulters", String(defaulters.length)]],
+      },
+      false,
+      `Defaulters-Report-${MONTH_NAMES[month - 1] ?? month}-${year}`
+    );
   })
 );
 
