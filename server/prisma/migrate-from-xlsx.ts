@@ -123,6 +123,30 @@ async function classId(nameRaw: string): Promise<number | null> {
   return rec.id;
 }
 
+// Global study-track master list (e.g. "Noorani Qaida", "Naazira Quran",
+// "Hifz Quran" — see schema.prisma's Category doc comment). Distinct from
+// categoryId() below, which upserts ExpenseCategory, an unrelated model.
+const studentCategoryCache = new Map<string, number>();
+async function studentCategoryId(nameRaw: string): Promise<number | null> {
+  const name = nameRaw.trim();
+  if (!name) return null;
+  if (studentCategoryCache.has(name)) return studentCategoryCache.get(name)!;
+  const rec = await prisma.category.upsert({ where: { name }, update: {}, create: { name } });
+  studentCategoryCache.set(name, rec.id);
+  return rec.id;
+}
+
+// Record that `cls` offers `cat` (Class.categories, the implicit m2m) so the
+// category actually shows up as a selectable option for that class in the
+// StudentForm UI, not just on the raw Student.categoryId FK.
+const linkedClassCategory = new Set<string>();
+async function linkCategoryToClass(cls: number, cat: number): Promise<void> {
+  const key = `${cls}:${cat}`;
+  if (linkedClassCategory.has(key)) return;
+  linkedClassCategory.add(key);
+  await prisma.class.update({ where: { id: cls }, data: { categories: { connect: { id: cat } } } });
+}
+
 const CATEGORY_SYNONYMS: Record<string, string> = {
   stationary: "Stationery",
   stationery: "Stationery",
@@ -152,7 +176,15 @@ async function categoryId(nameRaw: string): Promise<number> {
 // ---------------------------------------------------------------------------
 
 async function migrateStudents(ws: ExcelJS.Worksheet, academicYearId: number) {
-  // Header row 1; data from row 2.
+  // Header row 1; data from row 2. Column layout, verified against the sheet's
+  // actual header row (not assumed): 1 Admission Number, 2 Bill Number,
+  // 3 Student Name, 4 Age, 5 Gender, 6 Date of Birth, 7 Father/Guardian Name,
+  // 8 Contact Number, 9 Occupation, 10 Address, 11 Previous Studies,
+  // 12 Status, 13 Previous Madrasa, 14 Reason of leaving, 15 School,
+  // 16 Class, 17 Category, 18 School Timings, 19 Time Slot.
+  // Class/Category were previously misread (Class pulled School's column,
+  // Category wasn't read at all) and every notes-column index from 14 on was
+  // shifted by 1-2 — fixed below.
   let created = 0;
   const idByAdm = new Map<string, number>();
   for (let r = 2; r <= ws.rowCount; r++) {
@@ -161,16 +193,21 @@ async function migrateStudents(ws: ExcelJS.Worksheet, academicYearId: number) {
     if (!isStudentId(admissionNo)) continue;
 
     const gender = row[5]?.toLowerCase().startsWith("f") ? "female" : "male";
+    const status = row[12]?.trim().toLowerCase() === "inactive" ? "inactive" : "active";
     const notesParts = [
       row[9] && `Occupation: ${row[9]}`,
-      row[14] && `School: ${row[14]}`,
-      row[16] && `School timings: ${row[16]}`,
-      row[17] && `Time slot: ${row[17]}`,
+      row[15] && `School: ${row[15]}`,
+      row[18] && `School timings: ${row[18]}`,
+      row[19] && `Time slot: ${row[19]}`,
       row[11] && `Previous studies: ${row[11]}`,
-      row[12] && `Previous madrasa: ${row[12]}`,
+      row[13] && `Previous madrasa: ${row[13]}`,
+      row[14] && row[14].toUpperCase() !== "NA" && `Reason of leaving: ${row[14]}`,
     ].filter(Boolean);
 
-    const cid = (await classId(row[15])) ?? (await classId("1"))!;
+    const cid = (await classId(row[16])) ?? (await classId("1"))!;
+    const catId = await studentCategoryId(row[17] ?? "");
+    if (catId != null) await linkCategoryToClass(cid, catId);
+
     const data = {
       admissionNo,
       fullName: row[3] || admissionNo,
@@ -181,10 +218,11 @@ async function migrateStudents(ws: ExcelJS.Worksheet, academicYearId: number) {
       whatsappNo: cleanPhone(row[8] ?? ""),
       address: row[10] || null,
       classId: cid,
+      categoryId: catId,
       academicYearId,
       notes: notesParts.length ? notesParts.join(" | ") : null,
       legacyBillNo: row[2] || null,
-      status: "active",
+      status,
     };
     const rec = await prisma.student.upsert({
       where: { admissionNo },
