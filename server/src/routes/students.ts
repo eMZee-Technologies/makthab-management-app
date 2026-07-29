@@ -7,7 +7,7 @@ import {
   studentListQuery,
   type StudentListQuery,
 } from "@makthab/shared";
-import { prisma } from "../lib/prisma";
+import { studentRepository, classRepository, feePaymentRepository, attendanceRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
 import { requireAuth, requirePermission } from "../middleware/auth";
@@ -26,7 +26,7 @@ studentsRouter.use(requireAuth);
 // use categories at all need no extra data entry), and rejected outright for
 // classes that offer none.
 async function validateCategoryForClass(classId: number, categoryId: number | null | undefined) {
-  const cls = await prisma.class.findUnique({ where: { id: classId }, include: { categories: true } });
+  const cls = await classRepository.findByIdWithCategories(classId);
   if (!cls) throw new AppError(400, "invalid_class", "Class not found");
   if (cls.categories.length > 0) {
     if (categoryId == null) {
@@ -46,53 +46,7 @@ studentsRouter.get(
   validateQuery(studentListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as StudentListQuery;
-    const where: Record<string, unknown> = {};
-    if (q.class_id) where.classId = q.class_id;
-    if (q.status) where.status = q.status;
-    if (q.q) {
-      where.OR = [
-        { fullName: { contains: q.q } },
-        { admissionNo: { contains: q.q } },
-        { fatherName: { contains: q.q } },
-      ];
-    }
-    // "age" has no column of its own — it's derived client-side from
-    // dateOfBirth — so sort by dateOfBirth with sortOrder flipped: the oldest
-    // students have the EARLIEST dateOfBirth, so "age desc" (oldest first)
-    // means dateOfBirth ascending, and vice versa. Students with no recorded
-    // dateOfBirth (age unknown) always sort last, in either direction —
-    // otherwise SQLite's default null-is-smallest rule would put them at the
-    // "oldest" end whenever sorting age descending.
-    const orderBy = q.sortBy
-      ? q.sortBy === "class"
-        ? { class: { name: q.sortOrder } }
-        : q.sortBy === "age"
-          ? { dateOfBirth: { sort: q.sortOrder === "asc" ? ("desc" as const) : ("asc" as const), nulls: "last" as const } }
-          : { [q.sortBy]: q.sortOrder }
-      : { admissionNo: "asc" as const };
-    const [rows, total] = await Promise.all([
-      prisma.student.findMany({
-        where,
-        include: {
-          class: true,
-          category: true,
-          academicYear: true,
-          feePayments: {
-            where: { feeType: "admission" },
-            orderBy: { paymentDate: "asc" },
-            take: 1,
-          },
-        },
-        orderBy,
-        skip: (q.page - 1) * q.limit,
-        take: q.limit,
-      }),
-      prisma.student.count({ where }),
-    ]);
-    const items = rows.map(({ feePayments, ...student }) => ({
-      ...student,
-      admissionDate: feePayments[0]?.paymentDate ?? null,
-    }));
+    const { items, total } = await studentRepository.list(q);
     res.json({ data: { items, total, page: q.page, limit: q.limit } });
   })
 );
@@ -104,27 +58,24 @@ studentsRouter.post(
   validateBody(studentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof studentCreateSchema._output;
-    const exists = await prisma.student.findUnique({ where: { admissionNo: dto.admissionNo } });
+    const exists = await studentRepository.findByAdmissionNo(dto.admissionNo);
     if (exists) throw new AppError(409, "duplicate", `Admission number ${dto.admissionNo} already exists`);
     await validateCategoryForClass(dto.classId, dto.categoryId);
-    const student = await prisma.student.create({
-      data: {
-        admissionNo: dto.admissionNo,
-        fullName: dto.fullName,
-        fatherName: dto.fatherName,
-        dateOfBirth: dto.dateOfBirth ?? null,
-        gender: dto.gender,
-        contactNo: dto.contactNo,
-        whatsappNo: dto.whatsappNo,
-        address: dto.address ?? null,
-        classId: dto.classId,
-        categoryId: dto.categoryId ?? null,
-        academicYearId: dto.academicYearId,
-        photoPath: dto.photoPath ?? null,
-        notes: dto.notes ?? null,
-        status: dto.status ?? "active",
-      },
-      include: { class: true, category: true, academicYear: true },
+    const student = await studentRepository.create({
+      admissionNo: dto.admissionNo,
+      fullName: dto.fullName,
+      fatherName: dto.fatherName,
+      dateOfBirth: dto.dateOfBirth ?? null,
+      gender: dto.gender,
+      contactNo: dto.contactNo,
+      whatsappNo: dto.whatsappNo,
+      address: dto.address ?? null,
+      classId: dto.classId,
+      categoryId: dto.categoryId ?? null,
+      academicYearId: dto.academicYearId,
+      photoPath: dto.photoPath ?? null,
+      notes: dto.notes ?? null,
+      status: dto.status ?? "active",
     });
     res.status(201).json({ data: student });
   })
@@ -135,18 +86,11 @@ studentsRouter.get(
   "/:id",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const student = await prisma.student.findUnique({
-      where: { id },
-      include: { class: true, category: true, academicYear: true },
-    });
+    const student = await studentRepository.findByIdWithRelations(id);
     if (!student) throw new AppError(404, "not_found", "Student not found");
 
-    const fees = await prisma.feePayment.findMany({ where: { studentId: id } });
-    const attendance = await prisma.attendance.groupBy({
-      by: ["status"],
-      where: { studentId: id },
-      _count: { _all: true },
-    });
+    const fees = await feePaymentRepository.findByStudent(id);
+    const attendance = await attendanceRepository.countsByStatus(id);
     const attCounts = Object.fromEntries(attendance.map((a) => [a.status, a._count._all]));
     const totalMarked = attendance.reduce((s, a) => s + a._count._all, 0);
     const present = (attCounts.present ?? 0) + (attCounts.late ?? 0);
@@ -179,17 +123,13 @@ studentsRouter.patch(
   validateBody(studentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const exists = await prisma.student.findUnique({ where: { id } });
+    const exists = await studentRepository.findById(id);
     if (!exists) throw new AppError(404, "not_found", "Student not found");
     const dto = req.body as typeof studentUpdateSchema._output;
     const effectiveClassId = dto.classId ?? exists.classId;
     const effectiveCategoryId = "categoryId" in dto ? dto.categoryId : exists.categoryId;
     await validateCategoryForClass(effectiveClassId, effectiveCategoryId);
-    const student = await prisma.student.update({
-      where: { id },
-      data: dto,
-      include: { class: true, category: true, academicYear: true },
-    });
+    const student = await studentRepository.update(id, dto);
     res.json({ data: student });
   })
 );
@@ -204,9 +144,9 @@ studentsRouter.delete(
   requirePermission("students.manage"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const exists = await prisma.student.findUnique({ where: { id } });
+    const exists = await studentRepository.findById(id);
     if (!exists) throw new AppError(404, "not_found", "Student not found");
-    await prisma.student.update({ where: { id }, data: { status: "inactive" } });
+    await studentRepository.softDelete(id);
     res.json({ data: { id, status: "inactive" } });
   })
 );
@@ -216,10 +156,7 @@ studentsRouter.get(
   "/:id/receipt",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const student = await prisma.student.findUnique({
-      where: { id },
-      include: { class: true, academicYear: true },
-    });
+    const student = await studentRepository.findByIdWithRelations(id);
     if (!student) throw new AppError(404, "not_found", "Student not found");
 
     const pdf = renderPdf({
@@ -255,7 +192,7 @@ studentsRouter.post(
       throw new AppError(400, "no_file", "No photo uploaded (form field must be 'photo')");
     }
     const id = Number(req.params.id);
-    const existing = await prisma.student.findUnique({ where: { id } });
+    const existing = await studentRepository.findById(id);
     if (!existing) {
       // Defensive: the upload middleware already 404s unknown ids before writing.
       await fs.promises.rm(req.file.path, { force: true });
@@ -268,11 +205,7 @@ studentsRouter.post(
     }
 
     const photoPath = `photos/${req.file.filename}`;
-    const student = await prisma.student.update({
-      where: { id },
-      data: { photoPath },
-      include: { class: true, category: true, academicYear: true },
-    });
+    const student = await studentRepository.updatePhoto(id, photoPath);
     res.json({ data: student });
   })
 );
@@ -282,10 +215,7 @@ studentsRouter.get(
   "/:id/photo",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const student = await prisma.student.findUnique({
-      where: { id },
-      select: { photoPath: true },
-    });
+    const student = await studentRepository.findPhotoPath(id);
     if (!student) throw new AppError(404, "not_found", "Student not found");
     if (!student.photoPath) throw new AppError(404, "not_found", "Student has no photo");
 

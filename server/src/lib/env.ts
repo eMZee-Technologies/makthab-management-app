@@ -8,6 +8,17 @@ function required(name: string, fallback?: string): string {
   return v;
 }
 
+const DB_PROVIDERS = ["sqlite", "postgresql"] as const;
+type DatabaseProvider = (typeof DB_PROVIDERS)[number];
+
+function databaseProvider(): DatabaseProvider {
+  const v = process.env.DATABASE_PROVIDER ?? "sqlite";
+  if (!(DB_PROVIDERS as readonly string[]).includes(v)) {
+    throw new Error(`Invalid DATABASE_PROVIDER: "${v}" (expected "sqlite" or "postgresql")`);
+  }
+  return v as DatabaseProvider;
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 3000),
@@ -24,6 +35,7 @@ export const env = {
   whatsappBusinessPhoneNumberId: process.env.WHATSAPP_BUSINESS_PHONE_NUMBER_ID || undefined,
   whatsappBusinessApiVersion: process.env.WHATSAPP_BUSINESS_API_VERSION ?? "v21.0",
   puppeteerExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+  databaseProvider: databaseProvider(),
 };
 
 export const isProd = env.nodeEnv === "production";

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { loginRequestSchema, refreshRequestSchema } from "@makthab/shared";
-import { prisma } from "../lib/prisma";
+import { userRepository } from "../db";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt";
 import { resolvePermissions } from "../lib/permissions";
 import { asyncHandler } from "../lib/asyncHandler";
@@ -16,10 +16,7 @@ authRouter.post(
   validateBody(loginRequestSchema),
   asyncHandler(async (req, res) => {
     const { username, password } = req.body as { username: string; password: string };
-    const user = await prisma.user.findUnique({
-      where: { username },
-      include: { staff: true },
-    });
+    const user = await userRepository.findByUsername(username);
     if (!user || user.status !== "active") {
       throw new AppError(401, "invalid_credentials", "Invalid username or password");
     }
@@ -61,7 +58,7 @@ authRouter.post(
     } catch {
       throw new AppError(401, "invalid_token", "Invalid or expired refresh token");
     }
-    const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: { staff: true } });
+    const user = await userRepository.findByIdWithStaff(payload.sub);
     if (!user || user.status !== "active") {
       throw new AppError(401, "unauthorized", "User no longer active");
     }

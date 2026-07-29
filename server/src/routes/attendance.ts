@@ -5,7 +5,7 @@ import {
   attendanceListQuery,
   type AttendanceListQuery,
 } from "@makthab/shared";
-import { prisma } from "../lib/prisma";
+import { attendanceRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
 import { requireAuth, requirePermission } from "../middleware/auth";
@@ -17,7 +17,7 @@ export const attendanceRouter = Router();
 attendanceRouter.use(requireAuth, requirePermission("attendance.mark"));
 
 // Build a Prisma date-range filter for a month/year or a single date.
-function dateFilter(q: AttendanceListQuery): Record<string, unknown> | undefined {
+function dateFilter(q: AttendanceListQuery): { gte: Date; lt: Date } | undefined {
   if (q.date) {
     const d = new Date(q.date);
     const next = new Date(d);
@@ -41,20 +41,9 @@ attendanceRouter.post(
     const body = req.body as typeof attendanceBulkSchema._output;
     const records = Array.isArray(body) ? body : [body];
     const markedById = actorStaffId(req);
-    const saved = await Promise.all(
-      records.map((r) =>
-        prisma.attendance.upsert({
-          where: { studentId_date: { studentId: r.studentId, date: r.date } },
-          update: { status: r.status, notes: r.notes ?? null, markedById },
-          create: {
-            studentId: r.studentId,
-            date: r.date,
-            status: r.status,
-            notes: r.notes ?? null,
-            markedById,
-          },
-        })
-      )
+    const saved = await attendanceRepository.bulkUpsert(
+      records.map((r) => ({ studentId: r.studentId, date: r.date, status: r.status, notes: r.notes ?? null })),
+      markedById
     );
     res.status(201).json({ data: Array.isArray(body) ? saved : saved[0] });
   })
@@ -66,21 +55,11 @@ attendanceRouter.get(
   validateQuery(attendanceListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as AttendanceListQuery;
-    const df = dateFilter(q);
-    const rows = await prisma.attendance.findMany({
-      where: {
-        ...(df ? { date: df } : {}),
-        ...(q.student_id ? { studentId: q.student_id } : {}),
-        ...(q.class_id || q.category_id
-          ? {
-              student: {
-                ...(q.class_id ? { classId: q.class_id } : {}),
-                ...(q.category_id ? { categoryId: q.category_id } : {}),
-              },
-            }
-          : {}),
-      },
-      include: { student: true },
+    const rows = await attendanceRepository.findFiltered({
+      dateFilter: dateFilter(q),
+      studentId: q.student_id,
+      classId: q.class_id,
+      categoryId: q.category_id,
     });
     const byStudent = new Map<number, { fullName: string; present: number; absent: number; total: number }>();
     for (const r of rows) {
@@ -122,7 +101,7 @@ attendanceRouter.get(
   "/low-alert",
   asyncHandler(async (req, res) => {
     const threshold = Number(req.query.threshold ?? 75);
-    const rows = await prisma.attendance.findMany({ include: { student: true } });
+    const rows = await attendanceRepository.findFiltered({});
     const byStudent = new Map<number, { fullName: string; present: number; total: number }>();
     for (const r of rows) {
       const cur = byStudent.get(r.studentId) ?? { fullName: r.student?.fullName ?? "", present: 0, total: 0 };
@@ -147,22 +126,12 @@ attendanceRouter.get(
   validateQuery(attendanceListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as AttendanceListQuery;
-    const df = dateFilter(q);
-    const rows = await prisma.attendance.findMany({
-      where: {
-        ...(df ? { date: df } : {}),
-        ...(q.student_id ? { studentId: q.student_id } : {}),
-        ...(q.class_id || q.category_id
-          ? {
-              student: {
-                ...(q.class_id ? { classId: q.class_id } : {}),
-                ...(q.category_id ? { categoryId: q.category_id } : {}),
-              },
-            }
-          : {}),
-      },
-      include: { student: true },
-      orderBy: { date: "desc" },
+    const rows = await attendanceRepository.findFiltered({
+      dateFilter: dateFilter(q),
+      studentId: q.student_id,
+      classId: q.class_id,
+      categoryId: q.category_id,
+      orderByDateDesc: true,
     });
     res.json({ data: rows });
   })
@@ -174,9 +143,9 @@ attendanceRouter.patch(
   validateBody(attendanceUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const exists = await prisma.attendance.findUnique({ where: { id } });
+    const exists = await attendanceRepository.findById(id);
     if (!exists) throw new AppError(404, "not_found", "Attendance record not found");
-    const updated = await prisma.attendance.update({ where: { id }, data: req.body });
+    const updated = await attendanceRepository.update(id, req.body);
     res.json({ data: updated });
   })
 );

@@ -1,7 +1,5 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { Prisma } from "@prisma/client";
-import type { Staff, User } from "@prisma/client";
 import {
   userCreateSchema,
   userUpdateSchema,
@@ -10,7 +8,7 @@ import {
   type UserDto,
   type UserListQuery,
 } from "@makthab/shared";
-import { prisma } from "../lib/prisma";
+import { userRepository, roleRepository, isUniqueConstraintError, type Staff, type User } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
 import { requireAuth, requirePermission } from "../middleware/auth";
@@ -48,25 +46,7 @@ usersRouter.get(
   validateQuery(userListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as UserListQuery;
-    const where: Prisma.UserWhereInput = {};
-    if (q.role) where.role = q.role;
-    if (q.status) where.status = q.status;
-    // fullName sorts on the joined Staff record; every other field is on User.
-    const orderBy: Prisma.UserOrderByWithRelationInput = q.sortBy
-      ? q.sortBy === "fullName"
-        ? { staff: { fullName: q.sortOrder } }
-        : { [q.sortBy]: q.sortOrder }
-      : { username: "asc" };
-    const [items, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        include: { staff: true },
-        orderBy,
-        skip: (q.page - 1) * q.limit,
-        take: q.limit,
-      }),
-      prisma.user.count({ where }),
-    ]);
+    const { items, total } = await userRepository.list(q);
     res.json({
       data: { items: items.map(toUserDto), total, page: q.page, limit: q.limit },
     });
@@ -78,37 +58,23 @@ usersRouter.post(
   validateBody(userCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof userCreateSchema._output;
-    const roleExists = await prisma.role.findUnique({ where: { name: dto.role } });
+    const roleExists = await roleRepository.findByName(dto.role);
     if (!roleExists) throw new AppError(400, "unknown_role", `Unknown role: ${dto.role}`);
     try {
-      const user = await prisma.$transaction(async (tx) => {
-        const staff = await tx.staff.create({
-          data: {
-            fullName: dto.fullName,
-            role: dto.role,
-            baseSalary: 0,
-            contactNo: dto.contactNo,
-            whatsappNo: dto.whatsappNo,
-            address: dto.address ?? null,
-            status: "active",
-          },
-        });
-        const passwordHash = await bcrypt.hash(dto.password, 12);
-        return tx.user.create({
-          data: {
-            username: dto.username,
-            passwordHash,
-            email: dto.email,
-            role: dto.role,
-            staffId: staff.id,
-            status: "active",
-          },
-          include: { staff: true },
-        });
+      const passwordHash = await bcrypt.hash(dto.password, 12);
+      const user = await userRepository.createWithStaff({
+        fullName: dto.fullName,
+        contactNo: dto.contactNo,
+        whatsappNo: dto.whatsappNo,
+        address: dto.address ?? null,
+        username: dto.username,
+        passwordHash,
+        email: dto.email,
+        role: dto.role,
       });
       res.status(201).json({ data: toUserDto(user) });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      if (isUniqueConstraintError(err)) {
         throw new AppError(409, "conflict", "Username or email already in use");
       }
       throw err;
@@ -121,38 +87,33 @@ usersRouter.patch(
   validateBody(userUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.user.findUnique({ where: { id }, include: { staff: true } });
+    const existing = await userRepository.findByIdWithStaff(id);
     if (!existing) throw new AppError(404, "not_found", "User not found");
 
     const dto = req.body as typeof userUpdateSchema._output;
     if (dto.role !== undefined) {
-      const roleExists = await prisma.role.findUnique({ where: { name: dto.role } });
+      const roleExists = await roleRepository.findByName(dto.role);
       if (!roleExists) throw new AppError(400, "unknown_role", `Unknown role: ${dto.role}`);
     }
     try {
-      const user = await prisma.$transaction(async (tx) => {
-        await tx.staff.update({
-          where: { id: existing.staffId },
-          data: {
-            ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
-            ...(dto.contactNo !== undefined ? { contactNo: dto.contactNo } : {}),
-            ...(dto.whatsappNo !== undefined ? { whatsappNo: dto.whatsappNo } : {}),
-            ...(dto.address !== undefined ? { address: dto.address } : {}),
-          },
-        });
-        return tx.user.update({
-          where: { id },
-          data: {
-            ...(dto.email !== undefined ? { email: dto.email } : {}),
-            ...(dto.role !== undefined ? { role: dto.role } : {}),
-            ...(dto.status !== undefined ? { status: dto.status } : {}),
-          },
-          include: { staff: true },
-        });
-      });
+      const user = await userRepository.updateWithStaff(
+        id,
+        existing.staffId,
+        {
+          ...(dto.fullName !== undefined ? { fullName: dto.fullName } : {}),
+          ...(dto.contactNo !== undefined ? { contactNo: dto.contactNo } : {}),
+          ...(dto.whatsappNo !== undefined ? { whatsappNo: dto.whatsappNo } : {}),
+          ...(dto.address !== undefined ? { address: dto.address } : {}),
+        },
+        {
+          ...(dto.email !== undefined ? { email: dto.email } : {}),
+          ...(dto.role !== undefined ? { role: dto.role } : {}),
+          ...(dto.status !== undefined ? { status: dto.status } : {}),
+        }
+      );
       res.json({ data: toUserDto(user) });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      if (isUniqueConstraintError(err)) {
         throw new AppError(409, "conflict", "Username or email already in use");
       }
       throw err;
@@ -169,12 +130,12 @@ usersRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.user.findUnique({ where: { id } });
+    const existing = await userRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "User not found");
     if (req.user && req.user.sub === id) {
       throw new AppError(400, "self_action_forbidden", "You cannot deactivate your own account");
     }
-    await prisma.user.update({ where: { id }, data: { status: "inactive" } });
+    await userRepository.softDelete(id);
     res.json({ data: { id, status: "inactive" } });
   })
 );
@@ -186,11 +147,11 @@ usersRouter.post(
   validateBody(userPasswordResetSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.user.findUnique({ where: { id } });
+    const existing = await userRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "User not found");
     const dto = req.body as typeof userPasswordResetSchema._output;
     const passwordHash = await bcrypt.hash(dto.password, 12);
-    await prisma.user.update({ where: { id }, data: { passwordHash } });
+    await userRepository.setPassword(id, passwordHash);
     res.json({ data: { id } });
   })
 );

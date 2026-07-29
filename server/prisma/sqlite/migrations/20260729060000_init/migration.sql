@@ -10,14 +10,17 @@ CREATE TABLE "Student" (
     "whatsappNo" TEXT NOT NULL,
     "address" TEXT,
     "classId" INTEGER NOT NULL,
+    "categoryId" INTEGER,
     "academicYearId" INTEGER NOT NULL,
     "photoPath" TEXT,
     "notes" TEXT,
     "legacyBillNo" TEXT,
+    "feeOverrideAmount" REAL,
     "status" TEXT NOT NULL DEFAULT 'active',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL,
     CONSTRAINT "Student_classId_fkey" FOREIGN KEY ("classId") REFERENCES "Class" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "Student_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE SET NULL ON UPDATE CASCADE,
     CONSTRAINT "Student_academicYearId_fkey" FOREIGN KEY ("academicYearId") REFERENCES "AcademicYear" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
@@ -60,6 +63,8 @@ CREATE TABLE "Expense" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "voucherNo" TEXT NOT NULL,
     "categoryId" INTEGER NOT NULL,
+    "cost" REAL,
+    "quantity" REAL,
     "amount" REAL NOT NULL,
     "expenseDate" DATETIME NOT NULL,
     "payee" TEXT NOT NULL,
@@ -79,6 +84,9 @@ CREATE TABLE "Staff" (
     "baseSalary" REAL NOT NULL,
     "contactNo" TEXT NOT NULL,
     "whatsappNo" TEXT NOT NULL,
+    "address" TEXT,
+    "photoPath" TEXT,
+    "signaturePath" TEXT,
     "status" TEXT NOT NULL DEFAULT 'active',
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -88,6 +96,7 @@ CREATE TABLE "User" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "username" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
     "role" TEXT NOT NULL,
     "staffId" INTEGER NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'active',
@@ -121,6 +130,13 @@ CREATE TABLE "Class" (
 );
 
 -- CreateTable
+CREATE TABLE "Category" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateTable
 CREATE TABLE "AcademicYear" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "name" TEXT NOT NULL,
@@ -139,10 +155,40 @@ CREATE TABLE "ExpenseCategory" (
 CREATE TABLE "FeeStructure" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "classId" INTEGER NOT NULL,
+    "categoryId" INTEGER,
     "academicYearId" INTEGER NOT NULL,
     "feeType" TEXT NOT NULL,
     "amount" REAL NOT NULL,
-    CONSTRAINT "FeeStructure_academicYearId_fkey" FOREIGN KEY ("academicYearId") REFERENCES "AcademicYear" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+    CONSTRAINT "FeeStructure_academicYearId_fkey" FOREIGN KEY ("academicYearId") REFERENCES "AcademicYear" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+    CONSTRAINT "FeeStructure_categoryId_fkey" FOREIGN KEY ("categoryId") REFERENCES "Category" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- CreateTable
+CREATE TABLE "OrgProfile" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT NOT NULL,
+    "address" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT false,
+    "headerImagePath" TEXT,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "Role" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "name" TEXT NOT NULL,
+    "permissions" TEXT NOT NULL,
+    "isSystem" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);
+
+-- CreateTable
+CREATE TABLE "_CategoryToClass" (
+    "A" INTEGER NOT NULL,
+    "B" INTEGER NOT NULL,
+    CONSTRAINT "_CategoryToClass_A_fkey" FOREIGN KEY ("A") REFERENCES "Category" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT "_CategoryToClass_B_fkey" FOREIGN KEY ("B") REFERENCES "Class" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 -- CreateIndex
@@ -150,6 +196,9 @@ CREATE UNIQUE INDEX "Student_admissionNo_key" ON "Student"("admissionNo");
 
 -- CreateIndex
 CREATE INDEX "Student_classId_idx" ON "Student"("classId");
+
+-- CreateIndex
+CREATE INDEX "Student_categoryId_idx" ON "Student"("categoryId");
 
 -- CreateIndex
 CREATE INDEX "Student_academicYearId_idx" ON "Student"("academicYearId");
@@ -185,6 +234,9 @@ CREATE INDEX "Expense_expenseDate_idx" ON "Expense"("expenseDate");
 CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "User_staffId_key" ON "User"("staffId");
 
 -- CreateIndex
@@ -194,10 +246,23 @@ CREATE UNIQUE INDEX "SalaryPayment_staffId_salaryMonth_salaryYear_key" ON "Salar
 CREATE UNIQUE INDEX "Class_name_key" ON "Class"("name");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Category_name_key" ON "Category"("name");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "AcademicYear_name_key" ON "AcademicYear"("name");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ExpenseCategory_name_key" ON "ExpenseCategory"("name");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "FeeStructure_classId_academicYearId_feeType_key" ON "FeeStructure"("classId", "academicYearId", "feeType");
+CREATE UNIQUE INDEX "FeeStructure_classId_categoryId_academicYearId_feeType_key" ON "FeeStructure"("classId", "categoryId", "academicYearId", "feeType");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Role_name_key" ON "Role"("name");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "_CategoryToClass_AB_unique" ON "_CategoryToClass"("A", "B");
+
+-- CreateIndex
+CREATE INDEX "_CategoryToClass_B_index" ON "_CategoryToClass"("B");
+

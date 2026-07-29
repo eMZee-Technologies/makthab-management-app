@@ -1,7 +1,6 @@
 import { Router } from "express";
-import { Prisma } from "@prisma/client";
 import { categoryCreateSchema, categoryUpdateSchema } from "@makthab/shared";
-import { prisma } from "../lib/prisma";
+import { categoryRepository, classRepository, studentRepository, feeStructureRepository, isUniqueConstraintError } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
 import { requireAuth, requirePermission } from "../middleware/auth";
@@ -20,10 +19,10 @@ categoriesRouter.post(
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof categoryCreateSchema._output;
     try {
-      const category = await prisma.category.create({ data: dto });
+      const category = await categoryRepository.create(dto);
       res.status(201).json({ data: category });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      if (isUniqueConstraintError(err)) {
         throw new AppError(409, "duplicate", `Category ${dto.name} already exists`);
       }
       throw err;
@@ -36,14 +35,14 @@ categoriesRouter.patch(
   validateBody(categoryUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const exists = await prisma.category.findUnique({ where: { id } });
+    const exists = await categoryRepository.findById(id);
     if (!exists) throw new AppError(404, "not_found", "Category not found");
     const dto = req.body as typeof categoryUpdateSchema._output;
     try {
-      const category = await prisma.category.update({ where: { id }, data: dto });
+      const category = await categoryRepository.update(id, dto);
       res.json({ data: category });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      if (isUniqueConstraintError(err)) {
         throw new AppError(409, "duplicate", `Category ${dto.name} already exists`);
       }
       throw err;
@@ -57,13 +56,13 @@ categoriesRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const exists = await prisma.category.findUnique({ where: { id } });
+    const exists = await categoryRepository.findById(id);
     if (!exists) throw new AppError(404, "not_found", "Category not found");
 
     const [classCount, studentCount, feeStructureCount] = await Promise.all([
-      prisma.class.count({ where: { categories: { some: { id } } } }),
-      prisma.student.count({ where: { categoryId: id } }),
-      prisma.feeStructure.count({ where: { categoryId: id } }),
+      classRepository.countOffering(id),
+      studentRepository.countByCategory(id),
+      feeStructureRepository.countByCategory(id),
     ]);
     if (classCount > 0) {
       throw new AppError(409, "in_use", `Category is offered by ${classCount} class(es) and cannot be deleted`);
@@ -75,7 +74,7 @@ categoriesRouter.delete(
       throw new AppError(409, "in_use", `Category is referenced by ${feeStructureCount} fee structure(s) and cannot be deleted`);
     }
 
-    await prisma.category.delete({ where: { id } });
+    await categoryRepository.delete(id);
     res.json({ data: { id } });
   })
 );

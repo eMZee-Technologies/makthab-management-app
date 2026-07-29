@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { prisma } from "../lib/prisma";
+import { classRepository, categoryRepository, academicYearRepository, expenseCategoryRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAuth } from "../middleware/auth";
 
@@ -10,10 +10,7 @@ referenceRouter.use(requireAuth);
 referenceRouter.get(
   "/classes",
   asyncHandler(async (_req, res) => {
-    const classes = await prisma.class.findMany({
-      orderBy: { id: "asc" },
-      include: { teacher: true, categories: { orderBy: { name: "asc" } } },
-    });
+    const classes = await classRepository.listWithRelations();
     res.json({ data: classes });
   })
 );
@@ -21,7 +18,7 @@ referenceRouter.get(
 referenceRouter.get(
   "/categories",
   asyncHandler(async (_req, res) => {
-    const categories = await prisma.category.findMany({ orderBy: { name: "asc" } });
+    const categories = await categoryRepository.findAll();
     res.json({ data: categories });
   })
 );
@@ -29,7 +26,7 @@ referenceRouter.get(
 referenceRouter.get(
   "/academic-years",
   asyncHandler(async (_req, res) => {
-    const years = await prisma.academicYear.findMany({ orderBy: { startDate: "asc" } });
+    const years = await academicYearRepository.findAll();
     res.json({ data: years });
   })
 );
@@ -37,7 +34,7 @@ referenceRouter.get(
 referenceRouter.get(
   "/expense-categories",
   asyncHandler(async (_req, res) => {
-    const categories = await prisma.expenseCategory.findMany({ orderBy: { name: "asc" } });
+    const categories = await expenseCategoryRepository.findAllSortedByName();
     res.json({ data: categories });
   })
 );

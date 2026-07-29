@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { prisma } from "../lib/prisma";
+import { studentRepository, attendanceRepository, feePaymentRepository, feeStructureRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAuth } from "../middleware/auth";
 
@@ -16,40 +16,30 @@ dashboardRouter.get(
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-    const [totalStudents, todayAttendance, monthFees, recentFees] = await Promise.all([
-      prisma.student.count({ where: { status: "active" } }),
-      prisma.attendance.findMany({ where: { date: { gte: todayStart, lt: todayEnd } } }),
-      prisma.feePayment.aggregate({
-        _sum: { amountPaid: true },
-        where: { paymentDate: { gte: monthStart, lt: monthEnd } },
-      }),
-      prisma.feePayment.findMany({
-        take: 8,
-        orderBy: { id: "desc" },
-        include: { student: true },
-      }),
+    const [totalStudents, todayAttendance, monthCollection, recentFees] = await Promise.all([
+      studentRepository.count({ status: "active" }),
+      attendanceRepository.findFiltered({ dateFilter: { gte: todayStart, lt: todayEnd } }),
+      feePaymentRepository.sumAmountPaid({ paymentDate: { gte: monthStart, lt: monthEnd } }),
+      feePaymentRepository.findRecentWithStudent(8),
     ]);
 
     const todayPresent = todayAttendance.filter((a) => a.status === "present" || a.status === "late").length;
     const todayAbsent = todayAttendance.filter((a) => a.status === "absent").length;
 
     // Outstanding = active students without a payment this month × avg monthly fee.
-    const paidThisMonth = await prisma.feePayment.findMany({
-      where: { feeType: "monthly", paymentDate: { gte: monthStart, lt: monthEnd } },
-      select: { studentId: true },
-    });
-    const structures = await prisma.feeStructure.findMany({ where: { feeType: "monthly" } });
+    const paidThisMonthSet = await feePaymentRepository.studentIdsPaidInDateRange("monthly", { gte: monthStart, lt: monthEnd });
+    const structures = await feeStructureRepository.findByType("monthly");
     const avgFee = structures.length
       ? structures.reduce((s, f) => s + f.amount, 0) / structures.length
       : 0;
-    const unpaidCount = Math.max(0, totalStudents - new Set(paidThisMonth.map((p) => p.studentId)).size);
+    const unpaidCount = Math.max(0, totalStudents - paidThisMonthSet.size);
 
     res.json({
       data: {
         totalStudents,
         todayPresent,
         todayAbsent,
-        monthCollection: monthFees._sum.amountPaid ?? 0,
+        monthCollection,
         outstanding: Math.round(unpaidCount * avgFee),
         recentActivity: recentFees.map((f) => ({
           id: f.id,

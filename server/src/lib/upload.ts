@@ -2,7 +2,7 @@ import path from "node:path";
 import multer, { MulterError } from "multer";
 import type { NextFunction, Request, Response } from "express";
 import { PHOTOS_DIR, ensureDir } from "./paths";
-import { prisma } from "./prisma";
+import { studentRepository, staffRepository, orgProfileRepository } from "../db";
 import { AppError } from "../middleware/errorHandler";
 
 // Accepted image mimetypes → canonical extension.
@@ -23,10 +23,7 @@ const storage = multer.diskStorage({
     // here also lets us reject unknown ids before any bytes hit disk.
     void (async () => {
       const id = Number(req.params.id);
-      const student = await prisma.student.findUnique({
-        where: { id },
-        select: { admissionNo: true },
-      });
+      const student = await studentRepository.findById(id);
       if (!student) {
         return cb(new AppError(404, "not_found", "Student not found"), "");
       }
@@ -72,10 +69,7 @@ const staffStorage = multer.diskStorage({
   filename: (req, file, cb) => {
     void (async () => {
       const id = Number(req.params.id);
-      const staff = await prisma.staff.findUnique({
-        where: { id },
-        select: { id: true },
-      });
+      const staff = await staffRepository.findById(id);
       if (!staff) {
         return cb(new AppError(404, "not_found", "Staff not found"), "");
       }
@@ -134,10 +128,7 @@ const signatureStorage = multer.diskStorage({
   filename: (req, file, cb) => {
     void (async () => {
       const id = Number(req.params.id);
-      const staff = await prisma.staff.findUnique({
-        where: { id },
-        select: { id: true },
-      });
+      const staff = await staffRepository.findById(id);
       if (!staff) {
         return cb(new AppError(404, "not_found", "Staff not found"), "");
       }
@@ -181,7 +172,7 @@ const orgImageStorage = multer.diskStorage({
   filename: (req, file, cb) => {
     void (async () => {
       const id = Number(req.params.id);
-      const org = await prisma.orgProfile.findUnique({ where: { id }, select: { id: true } });
+      const org = await orgProfileRepository.findById(id);
       if (!org) {
         return cb(new AppError(404, "not_found", "Organisation profile not found"), "");
       }

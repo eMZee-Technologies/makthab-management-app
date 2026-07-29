@@ -60,9 +60,9 @@ data/output/*
 
 # --- Prisma ----------------------------------------------------------------
 # Generated client lives under node_modules (already ignored); this covers
-# any local generator output too.
+# any local generator output too (e.g. server/prisma/generated/).
 **/.prisma/
-prisma/generated/
+**/prisma/generated/
 
 # --- Logs ------------------------------------------------------------------
 *.log

@@ -1,13 +1,11 @@
 import { Router } from "express";
-import { Prisma } from "@prisma/client";
-import type { Role as RoleRow } from "@prisma/client";
 import {
   roleCreateSchema,
   roleUpdateSchema,
   PERMISSION_CATALOG,
   type RoleDto,
 } from "@makthab/shared";
-import { prisma } from "../lib/prisma";
+import { roleRepository, isUniqueConstraintError, type Role as RoleRow } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
 import { requireAuth, requirePermission } from "../middleware/auth";
@@ -51,7 +49,7 @@ rolesRouter.get(
 rolesRouter.get(
   "/",
   asyncHandler(async (_req, res) => {
-    const items = await prisma.role.findMany({ orderBy: { name: "asc" } });
+    const items = await roleRepository.findAll();
     res.json({ data: items.map(toDto) });
   })
 );
@@ -62,12 +60,10 @@ rolesRouter.post(
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof roleCreateSchema._output;
     try {
-      const row = await prisma.role.create({
-        data: { name: dto.name, permissions: JSON.stringify(dto.permissions), isSystem: false },
-      });
+      const row = await roleRepository.create({ name: dto.name, permissions: JSON.stringify(dto.permissions), isSystem: false });
       res.status(201).json({ data: toDto(row) });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      if (isUniqueConstraintError(err)) {
         throw new AppError(409, "conflict", "A role with that name already exists");
       }
       throw err;
@@ -82,7 +78,7 @@ rolesRouter.patch(
   validateBody(roleUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.role.findUnique({ where: { id } });
+    const existing = await roleRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Role not found");
 
     const dto = req.body as typeof roleUpdateSchema._output;
@@ -90,16 +86,13 @@ rolesRouter.patch(
       throw new AppError(400, "system_role", "System roles cannot be renamed");
     }
     try {
-      const row = await prisma.role.update({
-        where: { id },
-        data: {
-          ...(dto.name !== undefined ? { name: dto.name } : {}),
-          ...(dto.permissions !== undefined ? { permissions: JSON.stringify(dto.permissions) } : {}),
-        },
+      const row = await roleRepository.update(id, {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.permissions !== undefined ? { permissions: JSON.stringify(dto.permissions) } : {}),
       });
       res.json({ data: toDto(row) });
     } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      if (isUniqueConstraintError(err)) {
         throw new AppError(409, "conflict", "A role with that name already exists");
       }
       throw err;
@@ -112,12 +105,12 @@ rolesRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.role.findUnique({ where: { id } });
+    const existing = await roleRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Role not found");
     if (existing.isSystem) {
       throw new AppError(400, "system_role", "System roles cannot be deleted");
     }
-    await prisma.role.delete({ where: { id } });
+    await roleRepository.delete(id);
     res.json({ data: { id } });
   })
 );
