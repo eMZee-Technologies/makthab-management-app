@@ -1,6 +1,13 @@
-import { PrismaClient } from "@prisma/client";
+import "dotenv/config";
 import bcrypt from "bcryptjs";
 
+// Standalone CLI script (run via `tsx prisma/seed.ts`), outside the Express
+// app — resolves its own provider-appropriate client rather than going
+// through server/src/db/client.ts (an app-layer module).
+const provider = process.env.DATABASE_PROVIDER ?? "sqlite";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { PrismaClient } =
+  provider === "postgresql" ? require("./generated/postgres-client") : require("./generated/sqlite-client");
 const prisma = new PrismaClient();
 
 async function main() {
@@ -179,6 +186,17 @@ async function main() {
     where: { name: "Nazira" },
     data: { teacherId: teacherStaff.id },
   });
+
+  // Postgres SERIAL sequences aren't advanced by explicit-id inserts (unlike
+  // SQLite's rowid tracking), so later auto-generated inserts would collide
+  // with the hardcoded ids above (e.g. Staff id 1/2/3) unless resynced here.
+  if (provider === "postgresql") {
+    for (const table of ["OrgProfile", "Staff"]) {
+      await prisma.$executeRawUnsafe(
+        `SELECT setval(pg_get_serial_sequence('"${table}"', 'id'), (SELECT COALESCE(MAX(id), 1) FROM "${table}"))`,
+      );
+    }
+  }
 
   console.log("Seed complete. Logins: admin/admin123, accountant/accountant123, teacher/teacher123");
 }
