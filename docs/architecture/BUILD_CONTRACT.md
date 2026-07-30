@@ -38,6 +38,9 @@ Root `package.json` `workspaces` (or `pnpm-workspace.yaml`) must list: `packages
 ## 5. Data model (Prisma) — Backend owns `server/prisma/schema.prisma`
 Implement all models from doc §7.1: **Student, FeePayment, Attendance, Expense, Staff, SalaryPayment, Class, AcademicYear, ExpenseCategory**, plus a **User/auth** model for login (staff login with `passwordHash`, `role`). Seed: AcademicYears (2024-25, 2025-26), Classes (LKG, UKG, I, II, 1–7), ExpenseCategories, one admin Staff/User. Migration script already scaffolded at `server/prisma/migrate-from-sheets.ts`.
 
+**Dual-schema layout (multi-database support, see `docs/architecture/redesign/01-multi-database-support.md`):**
+`server/prisma/schema.prisma` is now the **canonical PostgreSQL schema**; `server/prisma/sqlite/schema.prisma` is **generated** from it (`npm run db:generate:sqlite-schema -w server`) and must never be hand-edited. Each variant keeps its own migration history (`server/prisma/migrations/` for Postgres, `server/prisma/sqlite/migrations/` for SQLite — the latter holds the original, real migration history applied to `data/madrasa.db`). `DATABASE_PROVIDER=sqlite|postgresql` (default `sqlite`) selects which generated client (`server/prisma/generated/{postgres,sqlite}-client`) the app loads at startup via `server/src/db/client.ts`. All data access outside `server/src/db/*` goes through the repository layer in `server/src/db/index.ts` — route/service code never imports `@prisma/client` or a generated-client path directly.
+
 ## 6. Roles / access (enforce on BOTH tiers)
 - Admin: full. Accountant: fees, expenses, salaries (no student profile edit). Teacher: attendance for assigned classes only.
 

@@ -16,7 +16,7 @@ import {
   type StaffListQuery,
   type SalaryListQuery,
 } from "@makthab/shared";
-import { prisma } from "../lib/prisma";
+import { expenseRepository, expenseCategoryRepository, staffRepository, userRepository, salaryPaymentRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
 import { requireAuth, requireRole, requirePermission } from "../middleware/auth";
@@ -36,20 +36,17 @@ expensesRouter.post(
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof expenseCreateSchema._output;
     const voucherNo = await nextVoucherNo();
-    const expense = await prisma.expense.create({
-      data: {
-        voucherNo,
-        categoryId: dto.categoryId,
-        cost: dto.cost,
-        quantity: dto.quantity,
-        amount: dto.cost * dto.quantity,
-        expenseDate: dto.expenseDate,
-        payee: dto.payee,
-        description: dto.description ?? null,
-        receiptScanPath: dto.receiptScanPath ?? null,
-        approvedById: actorStaffId(req),
-      },
-      include: { category: true },
+    const expense = await expenseRepository.create({
+      voucherNo,
+      categoryId: dto.categoryId,
+      cost: dto.cost,
+      quantity: dto.quantity,
+      amount: dto.cost * dto.quantity,
+      expenseDate: dto.expenseDate,
+      payee: dto.payee,
+      description: dto.description ?? null,
+      receiptScanPath: dto.receiptScanPath ?? null,
+      approvedById: actorStaffId(req),
     });
     res.status(201).json({ data: expense });
   })
@@ -63,7 +60,7 @@ expensesRouter.patch(
   validateBody(expenseUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.expense.findUnique({ where: { id } });
+    const existing = await expenseRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Expense not found");
 
     const dto = req.body as typeof expenseUpdateSchema._output;
@@ -72,21 +69,17 @@ expensesRouter.patch(
     const amount =
       cost !== null && quantity !== null ? cost * quantity : existing.amount;
 
-    const expense = await prisma.expense.update({
-      where: { id },
-      data: {
-        ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
-        ...(dto.cost !== undefined ? { cost: dto.cost } : {}),
-        ...(dto.quantity !== undefined ? { quantity: dto.quantity } : {}),
-        amount,
-        ...(dto.expenseDate !== undefined ? { expenseDate: dto.expenseDate } : {}),
-        ...(dto.payee !== undefined ? { payee: dto.payee } : {}),
-        ...(dto.description !== undefined ? { description: dto.description ?? null } : {}),
-        ...(dto.receiptScanPath !== undefined
-          ? { receiptScanPath: dto.receiptScanPath ?? null }
-          : {}),
-      },
-      include: { category: true },
+    const expense = await expenseRepository.update(id, {
+      ...(dto.categoryId !== undefined ? { categoryId: dto.categoryId } : {}),
+      ...(dto.cost !== undefined ? { cost: dto.cost } : {}),
+      ...(dto.quantity !== undefined ? { quantity: dto.quantity } : {}),
+      amount,
+      ...(dto.expenseDate !== undefined ? { expenseDate: dto.expenseDate } : {}),
+      ...(dto.payee !== undefined ? { payee: dto.payee } : {}),
+      ...(dto.description !== undefined ? { description: dto.description ?? null } : {}),
+      ...(dto.receiptScanPath !== undefined
+        ? { receiptScanPath: dto.receiptScanPath ?? null }
+        : {}),
     });
     res.json({ data: expense });
   })
@@ -98,9 +91,9 @@ expensesRouter.delete(
   requireRole("Admin"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.expense.findUnique({ where: { id } });
+    const existing = await expenseRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Expense not found");
-    await prisma.expense.delete({ where: { id } });
+    await expenseRepository.delete(id);
     res.json({ data: { id } });
   })
 );
@@ -109,16 +102,8 @@ expensesRouter.get(
   "/summary",
   asyncHandler(async (req, res) => {
     const period = req.query.period ? Number(req.query.period) : undefined;
-    const where = period
-      ? { expenseDate: { gte: new Date(period, 0, 1), lt: new Date(period + 1, 0, 1) } }
-      : {};
-    const grouped = await prisma.expense.groupBy({
-      by: ["categoryId"],
-      where,
-      _sum: { amount: true },
-      _count: { _all: true },
-    });
-    const categories = await prisma.expenseCategory.findMany();
+    const grouped = await expenseRepository.summaryByCategory(period);
+    const categories = await expenseCategoryRepository.findAll();
     const byName = new Map(categories.map((c) => [c.id, c.name]));
     res.json({
       data: grouped.map((g) => ({
@@ -136,31 +121,7 @@ expensesRouter.get(
   validateQuery(expenseListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as ExpenseListQuery;
-    const where: Record<string, unknown> = {};
-    if (q.category_id) where.categoryId = q.category_id;
-    if (q.date_from || q.date_to) {
-      where.expenseDate = {
-        ...(q.date_from ? { gte: new Date(q.date_from) } : {}),
-        ...(q.date_to ? { lte: new Date(q.date_to) } : {}),
-      };
-    }
-    const orderBy = q.sortBy
-      ? q.sortBy === "category"
-        ? { category: { name: q.sortOrder } }
-        : { [q.sortBy]: q.sortOrder }
-      : { id: "desc" as const };
-    const [items, total, agg] = await Promise.all([
-      prisma.expense.findMany({
-        where,
-        include: { category: true },
-        orderBy,
-        skip: (q.page - 1) * q.limit,
-        take: q.limit,
-      }),
-      prisma.expense.count({ where }),
-      prisma.expense.aggregate({ _sum: { amount: true }, where }),
-    ]);
-    const totalAmount = agg._sum.amount ?? 0;
+    const { items, total, totalAmount } = await expenseRepository.list(q);
     res.json({ data: { items, total, page: q.page, limit: q.limit, totalAmount } });
   })
 );
@@ -174,17 +135,7 @@ staffRouter.get(
   validateQuery(staffListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as StaffListQuery;
-    const orderBy = q.sortBy
-      ? { [q.sortBy]: q.sortOrder }
-      : { fullName: "asc" as const };
-    const [items, total] = await Promise.all([
-      prisma.staff.findMany({
-        orderBy,
-        skip: (q.page - 1) * q.limit,
-        take: q.limit,
-      }),
-      prisma.staff.count(),
-    ]);
+    const { items, total } = await staffRepository.list(q);
     res.json({ data: { items, total, page: q.page, limit: q.limit } });
   })
 );
@@ -195,27 +146,23 @@ staffRouter.post(
   validateBody(staffCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof staffCreateSchema._output;
-    const staff = await prisma.staff.create({
-      data: {
-        fullName: dto.fullName,
-        role: dto.role,
-        baseSalary: dto.baseSalary,
-        contactNo: dto.contactNo,
-        whatsappNo: dto.whatsappNo,
-      },
+    const staff = await staffRepository.create({
+      fullName: dto.fullName,
+      role: dto.role,
+      baseSalary: dto.baseSalary,
+      contactNo: dto.contactNo,
+      whatsappNo: dto.whatsappNo,
     });
     // Optionally provision an app login for this staff member. email is required
     // and unique on User; derive it from the username (same convention as seed).
     if (dto.username && dto.password && dto.appRole) {
       const passwordHash = await bcrypt.hash(dto.password, 12);
-      await prisma.user.create({
-        data: {
-          username: dto.username,
-          passwordHash,
-          email: `${dto.username}@makthab.local`,
-          role: dto.appRole,
-          staffId: staff.id,
-        },
+      await userRepository.create({
+        username: dto.username,
+        passwordHash,
+        email: `${dto.username}@makthab.local`,
+        role: dto.appRole,
+        staffId: staff.id,
       });
     }
     res.status(201).json({ data: staff });
@@ -229,9 +176,9 @@ staffRouter.patch(
   validateBody(staffUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.staff.findUnique({ where: { id } });
+    const existing = await staffRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Staff not found");
-    const staff = await prisma.staff.update({ where: { id }, data: req.body });
+    const staff = await staffRepository.update(id, req.body);
     res.json({ data: staff });
   })
 );
@@ -245,9 +192,9 @@ staffRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.staff.findUnique({ where: { id } });
+    const existing = await staffRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Staff not found");
-    await prisma.staff.update({ where: { id }, data: { status: "inactive" } });
+    await staffRepository.softDelete(id);
     res.json({ data: { id, status: "inactive" } });
   })
 );
@@ -261,7 +208,7 @@ staffRouter.post(
       throw new AppError(400, "no_file", "No photo uploaded (form field must be 'photo')");
     }
     const id = Number(req.params.id);
-    const existing = await prisma.staff.findUnique({ where: { id } });
+    const existing = await staffRepository.findById(id);
     if (!existing) {
       // Defensive: the upload middleware already 404s unknown ids before writing.
       await fs.promises.rm(req.file.path, { force: true });
@@ -274,7 +221,7 @@ staffRouter.post(
     }
 
     const photoPath = `photos/${req.file.filename}`;
-    const staff = await prisma.staff.update({ where: { id }, data: { photoPath } });
+    const staff = await staffRepository.updatePhoto(id, photoPath);
     res.json({ data: staff });
   })
 );
@@ -284,10 +231,7 @@ staffRouter.get(
   "/:id/photo",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const staff = await prisma.staff.findUnique({
-      where: { id },
-      select: { photoPath: true },
-    });
+    const staff = await staffRepository.findPhotoPath(id);
     if (!staff) throw new AppError(404, "not_found", "Staff not found");
     if (!staff.photoPath) throw new AppError(404, "not_found", "Staff has no photo");
 
@@ -311,7 +255,7 @@ staffRouter.post(
       throw new AppError(400, "no_file", "No signature uploaded (form field must be 'signature')");
     }
     const id = Number(req.params.id);
-    const existing = await prisma.staff.findUnique({ where: { id } });
+    const existing = await staffRepository.findById(id);
     if (!existing) {
       await fs.promises.rm(req.file.path, { force: true });
       throw new AppError(404, "not_found", "Staff not found");
@@ -322,7 +266,7 @@ staffRouter.post(
     }
 
     const signaturePath = `photos/${req.file.filename}`;
-    const staff = await prisma.staff.update({ where: { id }, data: { signaturePath } });
+    const staff = await staffRepository.updateSignature(id, signaturePath);
     res.json({ data: staff });
   })
 );
@@ -332,10 +276,7 @@ staffRouter.get(
   "/:id/signature",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const staff = await prisma.staff.findUnique({
-      where: { id },
-      select: { signaturePath: true },
-    });
+    const staff = await staffRepository.findSignaturePath(id);
     if (!staff) throw new AppError(404, "not_found", "Staff not found");
     if (!staff.signaturePath) throw new AppError(404, "not_found", "Staff has no signature");
 
@@ -358,27 +299,7 @@ salariesRouter.get(
   validateQuery(salaryListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as SalaryListQuery;
-    const where: Record<string, unknown> = {};
-    if (q.month) where.salaryMonth = q.month;
-    if (q.year) where.salaryYear = q.year;
-    if (q.staff_id) where.staffId = q.staff_id;
-    const orderBy = q.sortBy
-      ? q.sortBy === "staff"
-        ? { staff: { fullName: q.sortOrder } }
-        : { [q.sortBy]: q.sortOrder }
-      : { id: "desc" as const };
-    const [items, total, agg] = await Promise.all([
-      prisma.salaryPayment.findMany({
-        where,
-        include: { staff: true },
-        orderBy,
-        skip: (q.page - 1) * q.limit,
-        take: q.limit,
-      }),
-      prisma.salaryPayment.count({ where }),
-      prisma.salaryPayment.aggregate({ _sum: { netAmount: true }, where }),
-    ]);
-    const totalNet = agg._sum.netAmount ?? 0;
+    const { items, total, totalNet } = await salaryPaymentRepository.list(q);
     res.json({ data: { items, total, page: q.page, limit: q.limit, totalNet } });
   })
 );
@@ -390,36 +311,25 @@ salariesRouter.post(
   validateBody(salaryPaymentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof salaryPaymentCreateSchema._output;
-    const staff = await prisma.staff.findUnique({ where: { id: dto.staffId } });
+    const staff = await staffRepository.findById(dto.staffId);
     if (!staff) throw new AppError(404, "not_found", "Staff not found");
 
     // Pre-check the (staffId, month, year) uniqueness so we return a clean 409
     // rather than relying on the DB constraint to throw.
-    const duplicate = await prisma.salaryPayment.findUnique({
-      where: {
-        staffId_salaryMonth_salaryYear: {
-          staffId: dto.staffId,
-          salaryMonth: dto.salaryMonth,
-          salaryYear: dto.salaryYear,
-        },
-      },
-    });
+    const duplicate = await salaryPaymentRepository.findDuplicate(dto.staffId, dto.salaryMonth, dto.salaryYear);
     if (duplicate) {
       throw new AppError(409, "duplicate", "A salary payment already exists for this staff/month/year");
     }
 
     const netAmount = Math.max(0, dto.grossAmount - dto.deductions);
-    const payment = await prisma.salaryPayment.create({
-      data: {
-        staffId: dto.staffId,
-        salaryMonth: dto.salaryMonth,
-        salaryYear: dto.salaryYear,
-        grossAmount: dto.grossAmount,
-        deductions: dto.deductions,
-        netAmount,
-        paymentDate: dto.paymentDate,
-      },
-      include: { staff: true },
+    const payment = await salaryPaymentRepository.create({
+      staffId: dto.staffId,
+      salaryMonth: dto.salaryMonth,
+      salaryYear: dto.salaryYear,
+      grossAmount: dto.grossAmount,
+      deductions: dto.deductions,
+      netAmount,
+      paymentDate: dto.paymentDate,
     });
     res.status(201).json({ data: payment });
   })
@@ -432,30 +342,26 @@ salariesRouter.patch(
   validateBody(salaryPaymentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.salaryPayment.findUnique({ where: { id } });
+    const existing = await salaryPaymentRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Salary payment not found");
 
     const dto = req.body as typeof salaryPaymentUpdateSchema._output;
     if (dto.staffId !== undefined) {
-      const staff = await prisma.staff.findUnique({ where: { id: dto.staffId } });
+      const staff = await staffRepository.findById(dto.staffId);
       if (!staff) throw new AppError(404, "not_found", "Staff not found");
     }
     const grossAmount = dto.grossAmount ?? existing.grossAmount;
     const deductions = dto.deductions ?? existing.deductions;
     const netAmount = Math.max(0, grossAmount - deductions);
 
-    const payment = await prisma.salaryPayment.update({
-      where: { id },
-      data: {
-        ...(dto.staffId !== undefined ? { staffId: dto.staffId } : {}),
-        ...(dto.salaryMonth !== undefined ? { salaryMonth: dto.salaryMonth } : {}),
-        ...(dto.salaryYear !== undefined ? { salaryYear: dto.salaryYear } : {}),
-        ...(dto.grossAmount !== undefined ? { grossAmount: dto.grossAmount } : {}),
-        ...(dto.deductions !== undefined ? { deductions: dto.deductions } : {}),
-        netAmount,
-        ...(dto.paymentDate !== undefined ? { paymentDate: dto.paymentDate } : {}),
-      },
-      include: { staff: true },
+    const payment = await salaryPaymentRepository.update(id, {
+      ...(dto.staffId !== undefined ? { staffId: dto.staffId } : {}),
+      ...(dto.salaryMonth !== undefined ? { salaryMonth: dto.salaryMonth } : {}),
+      ...(dto.salaryYear !== undefined ? { salaryYear: dto.salaryYear } : {}),
+      ...(dto.grossAmount !== undefined ? { grossAmount: dto.grossAmount } : {}),
+      ...(dto.deductions !== undefined ? { deductions: dto.deductions } : {}),
+      netAmount,
+      ...(dto.paymentDate !== undefined ? { paymentDate: dto.paymentDate } : {}),
     });
     res.json({ data: payment });
   })
@@ -466,9 +372,9 @@ salariesRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.salaryPayment.findUnique({ where: { id } });
+    const existing = await salaryPaymentRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Salary payment not found");
-    await prisma.salaryPayment.delete({ where: { id } });
+    await salaryPaymentRepository.delete(id);
     res.json({ data: { id } });
   })
 );

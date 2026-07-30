@@ -5,7 +5,7 @@ module.exports = {
   testEnvironment: "node",
   roots: ["<rootDir>/tests"],
   testMatch: ["**/*.test.ts"],
-  maxWorkers: 1, // integration tests share one SQLite test DB
+  maxWorkers: 1, // integration tests share one test DB (SQLite or Postgres, per DATABASE_PROVIDER)
   setupFilesAfterEnv: ["<rootDir>/tests/setup.ts"],
   testTimeout: 30000, // Puppeteer PDF routes can be slow on first launch
 };

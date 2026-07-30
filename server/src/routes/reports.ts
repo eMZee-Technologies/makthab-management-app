@@ -1,6 +1,6 @@
 import type { Response } from "express";
 import { Router } from "express";
-import { prisma } from "../lib/prisma";
+import { feePaymentRepository, salaryPaymentRepository, expenseRepository, studentRepository, attendanceRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import { validateQuery } from "../middleware/validate";
@@ -32,12 +32,7 @@ reportsRouter.use(requireAuth, requirePermission("reports.access"));
 
 // Aggregate a single year's monthly-fee payments by month (all 12, zero-filled).
 export async function monthlyFeeBreakdown(year: number): Promise<MonthlyFeeBreakdownRow[]> {
-  const grouped = await prisma.feePayment.groupBy({
-    by: ["feeMonth"],
-    where: { feeType: "monthly", feeYear: year },
-    _sum: { amountPaid: true },
-    _count: { _all: true },
-  });
+  const grouped = await feePaymentRepository.groupByMonth("monthly", year);
   const byMonth = new Map<number, { totalPaid: number; count: number }>();
   for (const g of grouped) {
     if (g.feeMonth == null) continue;
@@ -54,12 +49,7 @@ export async function monthlyFeeBreakdown(year: number): Promise<MonthlyFeeBreak
 // through the current year (or the latest year with data, if later),
 // zero-filled, ascending.
 export async function yearlyFeeBreakdown(): Promise<YearlyFeeBreakdownRow[]> {
-  const grouped = await prisma.feePayment.groupBy({
-    by: ["feeYear"],
-    where: { feeType: "monthly" },
-    _sum: { amountPaid: true },
-    _count: { _all: true },
-  });
+  const grouped = await feePaymentRepository.groupByYear("monthly");
   const byYear = new Map<number, { totalPaid: number; count: number }>();
   for (const g of grouped) {
     byYear.set(g.feeYear, { totalPaid: g._sum.amountPaid ?? 0, count: g._count._all });
@@ -81,12 +71,7 @@ export async function yearlyFeeBreakdown(): Promise<YearlyFeeBreakdownRow[]> {
 // Aggregate a single year's salary payments by month (all 12, zero-filled),
 // summing net pay. Mirrors monthlyFeeBreakdown.
 export async function monthlySalaryBreakdown(year: number): Promise<MonthlySalaryBreakdownRow[]> {
-  const grouped = await prisma.salaryPayment.groupBy({
-    by: ["salaryMonth"],
-    where: { salaryYear: year },
-    _sum: { netAmount: true },
-    _count: { _all: true },
-  });
+  const grouped = await salaryPaymentRepository.groupByMonth(year);
   const byMonth = new Map<number, { totalNet: number; count: number }>();
   for (const g of grouped) {
     byMonth.set(g.salaryMonth, { totalNet: g._sum.netAmount ?? 0, count: g._count._all });
@@ -102,11 +87,7 @@ export async function monthlySalaryBreakdown(year: number): Promise<MonthlySalar
 // through the current year (or later if data exists beyond it), zero-filled,
 // ascending. Mirrors yearlyFeeBreakdown.
 export async function yearlySalaryBreakdown(): Promise<YearlySalaryBreakdownRow[]> {
-  const grouped = await prisma.salaryPayment.groupBy({
-    by: ["salaryYear"],
-    _sum: { netAmount: true },
-    _count: { _all: true },
-  });
+  const grouped = await salaryPaymentRepository.groupByYear();
   const byYear = new Map<number, { totalNet: number; count: number }>();
   for (const g of grouped) {
     byYear.set(g.salaryYear, { totalNet: g._sum.netAmount ?? 0, count: g._count._all });
@@ -127,16 +108,12 @@ export async function yearlySalaryBreakdown(): Promise<YearlySalaryBreakdownRow[
 // so a payment counts toward the year it settles.
 async function financialSummaryForYear(year: number): Promise<FinancialSummaryYearData> {
   const yearWindow = { gte: new Date(year, 0, 1), lt: new Date(year + 1, 0, 1) };
-  const [monthlyAgg, admissionAgg, expenseAgg, salaryAgg] = await Promise.all([
-    prisma.feePayment.aggregate({ _sum: { amountPaid: true }, where: { feeType: "monthly", feeYear: year } }),
-    prisma.feePayment.aggregate({ _sum: { amountPaid: true }, where: { feeType: "admission", feeYear: year } }),
-    prisma.expense.aggregate({ _sum: { amount: true }, where: { expenseDate: yearWindow } }),
-    prisma.salaryPayment.aggregate({ _sum: { netAmount: true }, where: { salaryYear: year } }),
+  const [monthlyFee, admissionFee, expenses, salaries] = await Promise.all([
+    feePaymentRepository.sumAmountPaid({ feeType: "monthly", feeYear: year }),
+    feePaymentRepository.sumAmountPaid({ feeType: "admission", feeYear: year }),
+    expenseRepository.sumByDateWindow(yearWindow),
+    salaryPaymentRepository.sumByYear(year),
   ]);
-  const monthlyFee = monthlyAgg._sum.amountPaid ?? 0;
-  const admissionFee = admissionAgg._sum.amountPaid ?? 0;
-  const expenses = expenseAgg._sum.amount ?? 0;
-  const salaries = salaryAgg._sum.netAmount ?? 0;
   return { monthlyFee, admissionFee, expenses, salaries, netBalance: monthlyFee + admissionFee - expenses - salaries };
 }
 
@@ -146,10 +123,10 @@ async function financialSummaryAllYears(): Promise<FinancialSummaryYearRow[]> {
   // Expense has no year column (only expenseDate), so group it in JS; the other
   // three sources have feeYear/salaryYear and use groupBy like their siblings.
   const [monthlyG, admissionG, salaryG, expenses] = await Promise.all([
-    prisma.feePayment.groupBy({ by: ["feeYear"], where: { feeType: "monthly" }, _sum: { amountPaid: true } }),
-    prisma.feePayment.groupBy({ by: ["feeYear"], where: { feeType: "admission" }, _sum: { amountPaid: true } }),
-    prisma.salaryPayment.groupBy({ by: ["salaryYear"], _sum: { netAmount: true } }),
-    prisma.expense.findMany({ select: { amount: true, expenseDate: true } }),
+    feePaymentRepository.groupByYear("monthly"),
+    feePaymentRepository.groupByYear("admission"),
+    salaryPaymentRepository.groupByYear(),
+    expenseRepository.findAllAmountsWithDate(),
   ]);
   const monthlyByYear = new Map(monthlyG.map((g) => [g.feeYear, g._sum.amountPaid ?? 0]));
   const admissionByYear = new Map(admissionG.map((g) => [g.feeYear, g._sum.amountPaid ?? 0]));
@@ -308,11 +285,7 @@ reportsRouter.get(
     }
     const month = Number(req.query.month);
     const year = Number(req.query.year);
-    const fees = await prisma.feePayment.findMany({
-      where: { feeType: "monthly", feeMonth: month, feeYear: year },
-      include: { student: true },
-      orderBy: { id: "asc" },
-    });
+    const fees = await feePaymentRepository.findForReport({ feeType: "monthly", feeMonth: month, feeYear: year });
     await send(
       res,
       req.query.format,
@@ -348,11 +321,7 @@ reportsRouter.get(
   "/admission-fee-collection",
   asyncHandler(async (req, res) => {
     const year = req.query.year ? Number(req.query.year) : undefined;
-    const fees = await prisma.feePayment.findMany({
-      where: { feeType: "admission", ...(year ? { feeYear: year } : {}) },
-      include: { student: true },
-      orderBy: { id: "asc" },
-    });
+    const fees = await feePaymentRepository.findForReport({ feeType: "admission", feeYear: year });
     await send(
       res,
       req.query.format,
@@ -383,12 +352,8 @@ reportsRouter.get(
   asyncHandler(async (req, res) => {
     const month = Number(req.query.month);
     const year = Number(req.query.year);
-    const students = await prisma.student.findMany({ where: { status: "active" }, include: { class: true } });
-    const paid = await prisma.feePayment.findMany({
-      where: { feeType: "monthly", feeMonth: month, feeYear: year },
-      select: { studentId: true },
-    });
-    const paidSet = new Set(paid.map((p) => p.studentId));
+    const students = await studentRepository.findActiveWithClass();
+    const paidSet = await feePaymentRepository.studentIdsPaidForPeriod("monthly", month, year);
     const defaulters = students.filter((s) => !paidSet.has(s.id));
     await send(
       res,
@@ -424,19 +389,10 @@ reportsRouter.get(
     const categoryId = req.query.category_id ? Number(req.query.category_id) : undefined;
     const month = Number(req.query.month);
     const year = Number(req.query.year);
-    const rows = await prisma.attendance.findMany({
-      where: {
-        date: monthWindow(month, year),
-        ...(classId || categoryId
-          ? {
-              student: {
-                ...(classId ? { classId } : {}),
-                ...(categoryId ? { categoryId } : {}),
-              },
-            }
-          : {}),
-      },
-      include: { student: true },
+    const rows = await attendanceRepository.findFiltered({
+      dateFilter: monthWindow(month, year),
+      classId,
+      categoryId,
     });
     const byStudent = new Map<number, { name: string; present: number; total: number }>();
     for (const r of rows) {
@@ -464,13 +420,7 @@ reportsRouter.get(
   "/expenses",
   asyncHandler(async (req, res) => {
     const period = req.query.period ? Number(req.query.period) : undefined;
-    const expenses = await prisma.expense.findMany({
-      where: period
-        ? { expenseDate: { gte: new Date(period, 0, 1), lt: new Date(period + 1, 0, 1) } }
-        : {},
-      include: { category: true },
-      orderBy: { expenseDate: "asc" },
-    });
+    const expenses = await expenseRepository.findForReport(period);
     await send(
       res,
       req.query.format,
@@ -560,11 +510,7 @@ reportsRouter.get(
     }
     const month = Number(req.query.month);
     const year = Number(req.query.year);
-    const salaries = await prisma.salaryPayment.findMany({
-      where: { salaryMonth: month, salaryYear: year },
-      include: { staff: true },
-      orderBy: { id: "asc" },
-    });
+    const salaries = await salaryPaymentRepository.findForReport(month, year);
     await send(
       res,
       req.query.format,

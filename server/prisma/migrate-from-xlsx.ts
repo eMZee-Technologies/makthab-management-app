@@ -39,8 +39,14 @@
 import "dotenv/config";
 import path from "node:path";
 import ExcelJS from "exceljs";
-import { PrismaClient } from "@prisma/client";
 
+// Standalone CLI script (run via `tsx prisma/migrate-from-xlsx.ts`), outside
+// the Express app — resolves its own provider-appropriate client rather than
+// going through server/src/db/client.ts (an app-layer module).
+const provider = process.env.DATABASE_PROVIDER ?? "sqlite";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { PrismaClient } =
+  provider === "postgresql" ? require("./generated/postgres-client") : require("./generated/sqlite-client");
 const prisma = new PrismaClient({ log: ["warn", "error"] });
 const WORKBOOK = path.resolve(__dirname, "../../docs/source-data/Maktab Detailed - Report.xlsx");
 

@@ -11,7 +11,7 @@ import {
   type FeeListQuery,
   type DefaultersQuery,
 } from "@makthab/shared";
-import { prisma } from "../lib/prisma";
+import { feePaymentRepository, studentRepository, feeStructureRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
 import { requireAuth, requirePermission } from "../middleware/auth";
@@ -31,10 +31,7 @@ feesRouter.use(requireAuth, requirePermission("fees.manage"));
 
 type FeeWithStudent = Awaited<ReturnType<typeof loadFee>>;
 async function loadFee(id: number) {
-  return prisma.feePayment.findUnique({
-    where: { id },
-    include: { student: true, collectedBy: true },
-  });
+  return feePaymentRepository.findByIdWithStudentAndCollector(id);
 }
 
 // Load the collecting staff member's uploaded signature (if any) as an
@@ -108,7 +105,7 @@ feesRouter.post(
   validateBody(feePaymentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof feePaymentCreateSchema._output;
-    const student = await prisma.student.findUnique({ where: { id: dto.studentId } });
+    const student = await studentRepository.findById(dto.studentId);
     if (!student) throw new AppError(404, "not_found", "Student not found");
 
     const receiptNo = await nextReceiptNo({
@@ -117,30 +114,23 @@ feesRouter.post(
       feeYear: dto.feeYear,
       feeMonth: dto.feeMonth,
     });
-    const created = await prisma.feePayment.create({
-      data: {
-        receiptNo,
-        studentId: dto.studentId,
-        feeType: dto.feeType,
-        feeMonth: dto.feeMonth ?? null,
-        feeYear: dto.feeYear,
-        amountDue: dto.amountDue,
-        amountPaid: dto.amountPaid,
-        paymentDate: dto.paymentDate,
-        paymentMethod: dto.paymentMethod,
-        waiverAmount: dto.waiverAmount ?? 0,
-        collectedById: actorStaffId(req),
-      },
-      include: { student: true, collectedBy: true },
+    const created = await feePaymentRepository.create({
+      receiptNo,
+      studentId: dto.studentId,
+      feeType: dto.feeType,
+      feeMonth: dto.feeMonth ?? null,
+      feeYear: dto.feeYear,
+      amountDue: dto.amountDue,
+      amountPaid: dto.amountPaid,
+      paymentDate: dto.paymentDate,
+      paymentMethod: dto.paymentMethod,
+      waiverAmount: dto.waiverAmount ?? 0,
+      collectedById: actorStaffId(req),
     });
 
     const pdfPath = path.join(ensureDir(RECEIPTS_DIR), `${receiptNo}.pdf`);
     fs.writeFileSync(pdfPath, await receiptPdf(created));
-    const fee = await prisma.feePayment.update({
-      where: { id: created.id },
-      data: { pdfPath },
-      include: { student: true },
-    });
+    const fee = await feePaymentRepository.setPdfPath(created.id, pdfPath);
 
     res.status(201).json({ data: fee });
   })
@@ -167,19 +157,9 @@ feesRouter.get(
   validateQuery(defaultersQuery),
   asyncHandler(async (_req, res) => {
     const { month, year, page, limit, sortBy, sortOrder } = res.locals.query as DefaultersQuery;
-    const students = await prisma.student.findMany({
-      where: { status: "active" },
-      include: { class: true },
-    });
-    const paid = await prisma.feePayment.findMany({
-      where: { feeType: "monthly", feeMonth: month, feeYear: year },
-      select: { studentId: true },
-    });
-    const paidSet = new Set(paid.map((p) => p.studentId));
-    const structures = await prisma.feeStructure.findMany({
-      where: { feeType: "monthly" },
-      include: { academicYear: true },
-    });
+    const students = await studentRepository.findActiveWithClass();
+    const paidSet = await feePaymentRepository.studentIdsPaidForPeriod("monthly", month, year);
+    const structures = await feeStructureRepository.findByTypeWithYear("monthly");
     // Resolve a class(+category)'s monthly fee. Prefer an exact
     // classId+categoryId+academicYearId match, but a class's FeeStructure is
     // often configured under an older academic year than the student's
@@ -227,15 +207,11 @@ feesRouter.patch(
   validateBody(defaulterUpdateSchema),
   asyncHandler(async (req, res) => {
     const studentId = Number(req.params.studentId);
-    const existing = await prisma.student.findUnique({ where: { id: studentId } });
+    const existing = await studentRepository.findById(studentId);
     if (!existing) throw new AppError(404, "not_found", "Student not found");
 
     const dto = req.body as typeof defaulterUpdateSchema._output;
-    const student = await prisma.student.update({
-      where: { id: studentId },
-      data: { feeOverrideAmount: dto.amountDue },
-      include: { class: true },
-    });
+    const student = await studentRepository.updateFeeOverride(studentId, dto.amountDue);
     // The override takes precedence, so the row's amountDue echoes what was set.
     res.json({ data: defaulterRow(student, 0) });
   })
@@ -245,10 +221,7 @@ feesRouter.patch(
 feesRouter.get(
   "/structures",
   asyncHandler(async (_req, res) => {
-    const items = await prisma.feeStructure.findMany({
-      include: { academicYear: true, category: true },
-      orderBy: { id: "asc" },
-    });
+    const items = await feeStructureRepository.findAll();
     res.json({ data: items });
   })
 );
@@ -262,12 +235,10 @@ feesRouter.post(
     // nullable field (categoryId), so upsert-by-compound-key isn't usable here
     // — look the row up as a plain filter (which does accept null) instead.
     const categoryId = dto.categoryId ?? null;
-    const existing = await prisma.feeStructure.findFirst({
-      where: { classId: dto.classId, categoryId, academicYearId: dto.academicYearId, feeType: dto.feeType },
-    });
+    const existing = await feeStructureRepository.findMatch(dto.classId, categoryId, dto.academicYearId, dto.feeType);
     const item = existing
-      ? await prisma.feeStructure.update({ where: { id: existing.id }, data: { amount: dto.amount } })
-      : await prisma.feeStructure.create({ data: { ...dto, categoryId } });
+      ? await feeStructureRepository.updateAmount(existing.id, dto.amount)
+      : await feeStructureRepository.create({ ...dto, categoryId });
     res.status(201).json({ data: item });
   })
 );
@@ -277,9 +248,9 @@ feesRouter.delete(
   "/structures/:id",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.feeStructure.findUnique({ where: { id } });
+    const existing = await feeStructureRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Fee structure not found");
-    await prisma.feeStructure.delete({ where: { id } });
+    await feeStructureRepository.delete(id);
     res.json({ data: { id } });
   })
 );
@@ -290,38 +261,7 @@ feesRouter.get(
   validateQuery(feeListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as FeeListQuery;
-    const where: Record<string, unknown> = {};
-    if (q.student_id) where.studentId = q.student_id;
-    if (q.feeType) where.feeType = q.feeType;
-    if (q.month) where.feeMonth = q.month;
-    if (q.year) where.feeYear = q.year;
-    const orderBy = q.sortBy
-      ? q.sortBy === "student"
-        ? { student: { fullName: q.sortOrder } }
-        : q.sortBy === "admissionNo"
-          ? { student: { admissionNo: q.sortOrder } }
-          : { [q.sortBy]: q.sortOrder }
-      : { student: { admissionNo: "asc" as const } };
-    const skip = (q.page - 1) * q.limit;
-    // paid/unpaid compares two columns (amountPaid vs amountDue), which Prisma
-    // can't express in `where`, so when it's active we fetch the full filtered
-    // set and paginate in-memory; otherwise the DB does skip/take + count.
-    const rows = await prisma.feePayment.findMany({
-      where,
-      include: { student: true },
-      orderBy,
-      ...(q.status ? {} : { skip, take: q.limit }),
-    });
-    const filtered =
-      q.status === "paid"
-        ? rows.filter((r) => r.amountPaid >= r.amountDue)
-        : q.status === "unpaid"
-          ? rows.filter((r) => r.amountPaid < r.amountDue)
-          : rows;
-    const items = q.status ? filtered.slice(skip, skip + q.limit) : filtered;
-    const total = q.status ? filtered.length : await prisma.feePayment.count({ where });
-    const agg = await prisma.feePayment.aggregate({ _sum: { amountPaid: true }, where });
-    const totalPaid = agg._sum.amountPaid ?? 0;
+    const { items, total, totalPaid } = await feePaymentRepository.list(q);
     res.json({ data: { items, total, page: q.page, limit: q.limit, totalPaid } });
   })
 );
@@ -343,31 +283,27 @@ feesRouter.patch(
   validateBody(feePaymentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const existing = await prisma.feePayment.findUnique({ where: { id } });
+    const existing = await feePaymentRepository.findById(id);
     if (!existing) throw new AppError(404, "not_found", "Payment not found");
 
     const dto = req.body as typeof feePaymentUpdateSchema._output;
     if (dto.studentId !== undefined) {
-      const student = await prisma.student.findUnique({ where: { id: dto.studentId } });
+      const student = await studentRepository.findById(dto.studentId);
       if (!student) throw new AppError(404, "not_found", "Student not found");
     }
 
     // Prisma skips `undefined` fields, so only the keys the client sent are
     // written; feeMonth can be set to null to clear a monthly period.
-    const fee = await prisma.feePayment.update({
-      where: { id },
-      data: {
-        studentId: dto.studentId,
-        feeType: dto.feeType,
-        feeMonth: dto.feeMonth,
-        feeYear: dto.feeYear,
-        amountDue: dto.amountDue,
-        amountPaid: dto.amountPaid,
-        paymentDate: dto.paymentDate,
-        paymentMethod: dto.paymentMethod,
-        waiverAmount: dto.waiverAmount,
-      },
-      include: { student: true },
+    const fee = await feePaymentRepository.edit(id, {
+      studentId: dto.studentId,
+      feeType: dto.feeType,
+      feeMonth: dto.feeMonth,
+      feeYear: dto.feeYear,
+      amountDue: dto.amountDue,
+      amountPaid: dto.amountPaid,
+      paymentDate: dto.paymentDate,
+      paymentMethod: dto.paymentMethod,
+      waiverAmount: dto.waiverAmount,
     });
     res.json({ data: fee });
   })
@@ -379,10 +315,10 @@ feesRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    const fee = await prisma.feePayment.findUnique({ where: { id } });
+    const fee = await feePaymentRepository.findById(id);
     if (!fee) throw new AppError(404, "not_found", "Payment not found");
 
-    await prisma.feePayment.delete({ where: { id } });
+    await feePaymentRepository.delete(id);
     if (fee.pdfPath) {
       await fs.promises.rm(fee.pdfPath, { force: true }).catch(() => { });
     }
@@ -435,13 +371,13 @@ feesRouter.post(
     if (env.whatsappGateway === "business-api") {
       const pdf = fee.pdfPath && fs.existsSync(fee.pdfPath) ? fs.readFileSync(fee.pdfPath) : await receiptPdf(fee);
       await sendWhatsAppDocumentViaBusinessApi(fee.student.whatsappNo, pdf, `${fee.receiptNo}.pdf`, caption);
-      await prisma.feePayment.update({ where: { id: fee.id }, data: { whatsappSent: true } });
+      await feePaymentRepository.markWhatsappSent(fee.id);
       res.json({ data: { mode: "business-api", whatsappSent: true } });
       return;
     }
 
     const link = buildWhatsAppLink(fee.student.whatsappNo, caption);
-    await prisma.feePayment.update({ where: { id: fee.id }, data: { whatsappSent: true } });
+    await feePaymentRepository.markWhatsappSent(fee.id);
     res.json({ data: { mode: "walink", link, whatsappSent: true } });
   })
 );

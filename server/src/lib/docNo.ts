@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { feePaymentRepository, expenseRepository } from "../db";
 
 // Human-readable, unique document numbers. Counts are safe under the API's
 // single-writer request handling; the unique DB constraint is the backstop.
@@ -22,12 +22,9 @@ function safeToken(s: string): string {
 // could collide with a surviving receiptNo (@unique). Same fix as
 // nextVoucherNo below.
 async function nextSeq(prefix: string): Promise<string> {
-  const rows = await prisma.feePayment.findMany({
-    where: { receiptNo: { startsWith: prefix } },
-    select: { receiptNo: true },
-  });
-  const maxSeq = rows.reduce((m, r) => {
-    const seq = Number(r.receiptNo.slice(prefix.length));
+  const receiptNos = await feePaymentRepository.findReceiptNosStartingWith(prefix);
+  const maxSeq = receiptNos.reduce((m, receiptNo) => {
+    const seq = Number(receiptNo.slice(prefix.length));
     return Number.isFinite(seq) && seq > m ? seq : m;
   }, 0);
   return String(maxSeq + 1).padStart(4, "0");
@@ -42,13 +39,10 @@ async function nextSeq(prefix: string): Promise<string> {
 // ignores anything else sharing the prefix — e.g. migrated legacy monthly
 // receipts in the older `MF-<admNo>-<yyyy>-<mm>` shape (no seq segment).
 async function nextGlobalSeq(typePrefix: string): Promise<string> {
-  const rows = await prisma.feePayment.findMany({
-    where: { receiptNo: { startsWith: `${typePrefix}-` } },
-    select: { receiptNo: true },
-  });
+  const receiptNos = await feePaymentRepository.findReceiptNosStartingWith(`${typePrefix}-`);
   const seqPattern = new RegExp(`^${typePrefix}-.+-\\d+-(\\d{4})$`);
-  const maxSeq = rows.reduce((m, r) => {
-    const match = r.receiptNo.match(seqPattern);
+  const maxSeq = receiptNos.reduce((m, receiptNo) => {
+    const match = receiptNo.match(seqPattern);
     const seq = match ? Number(match[1]) : NaN;
     return Number.isFinite(seq) && seq > m ? seq : m;
   }, 0);
@@ -93,9 +87,9 @@ export async function nextReceiptNo(params: {
 export async function nextVoucherNo(): Promise<string> {
   // Derive from the max existing suffix, not count(): expenses can be hard-
   // deleted, so count()+1 could collide with a surviving voucherNo (@unique).
-  const rows = await prisma.expense.findMany({ select: { voucherNo: true } });
-  const maxSeq = rows.reduce((m, r) => {
-    const seq = Number(r.voucherNo.split("-").pop());
+  const voucherNos = await expenseRepository.findAllVoucherNos();
+  const maxSeq = voucherNos.reduce((m, voucherNo) => {
+    const seq = Number(voucherNo.split("-").pop());
     return Number.isFinite(seq) && seq > m ? seq : m;
   }, 0);
   return `EXP-${stamp()}-${String(maxSeq + 1).padStart(4, "0")}`;

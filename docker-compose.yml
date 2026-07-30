@@ -1,0 +1,20 @@
+# Local PostgreSQL for manual dev/testing of the DATABASE_PROVIDER=postgresql
+# path. Not used by `npm run dev`, which defaults to SQLite (see
+# docs/architecture/redesign/01-multi-database-support.md). No app container —
+# the server still runs on the host via `npm run dev -w server` /
+# `DATABASE_PROVIDER=postgresql npm run dev -w server`.
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: makthab_dev
+    ports:
+      - "5433:5432" # 5433 to avoid clashing with a host-installed Postgres on 5432
+    volumes:
+      - makthab_pg_data:/var/lib/postgresql/data
+
+volumes:
+  makthab_pg_data:

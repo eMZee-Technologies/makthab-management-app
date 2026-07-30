@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { orgProfileRepository } from "../db";
 
 export interface OrgHeader {
   name: string;
@@ -13,11 +13,6 @@ const FALLBACK: OrgHeader = { name: "Makthab", address: "" };
 // report. Backed by the OrgProfile singleton table — see schema.prisma for
 // the multi-tenant seam this sets up.
 export async function getOrgHeader(): Promise<OrgHeader> {
-  // The active profile is the institution letterhead. Fall back to the lowest-id
-  // row if none is flagged active (e.g. a partially-migrated DB), then to a
-  // constant so reports never 500.
-  const row =
-    (await prisma.orgProfile.findFirst({ where: { isActive: true } })) ??
-    (await prisma.orgProfile.findFirst({ orderBy: { id: "asc" } }));
+  const row = await orgProfileRepository.findActiveOrFirst();
   return row ? { name: row.name, address: row.address } : FALLBACK;
 }

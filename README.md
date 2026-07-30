@@ -9,7 +9,7 @@ PDF/Excel reporting — with Arabic/RTL-aware UI.
 | Layer | Stack |
 |---|---|
 | **Client** | React 18 + TypeScript + Vite + Tailwind + shadcn/ui (SPA) |
-| **Server** | Node 20 + Express + TypeScript + Prisma 5 + SQLite |
+| **Server** | Node 20 + Express + TypeScript + Prisma 5 + SQLite (dev) **or** PostgreSQL (production) |
 | **Shared** | Zod schemas + inferred TS DTOs (`@makthab/shared`) |
 | **Auth** | JWT (access + refresh), roles: Admin / Accountant / Teacher |
 | **Docs (PDF)** | Built-in dependency-free PDF writer; Excel via ExcelJS |
@@ -25,9 +25,9 @@ docs/              # architecture, migration, reference, development docs
 ```
 (*`server` is unscoped in package.json.) npm workspaces are declared at the repo root.
 
-## Quick start
+## Quick start (SQLite — default, zero-setup)
 
-Prerequisites: **Node 20+**.
+Prerequisites: **Node 20+**. No database server required — SQLite is the default.
 
 ```bash
 # 1. Install all workspace dependencies
@@ -47,6 +47,64 @@ npm run dev
 - Client: <http://localhost:5173>
 - API: <http://localhost:3000>  ·  health: <http://localhost:3000/health>
 
+## PostgreSQL deployment
+
+PostgreSQL is the production target. Local development defaults to SQLite
+(zero-setup), but you can point the app at a local Postgres instance for
+pre-deployment testing. See
+[`docs/architecture/redesign/01-multi-database-support.md`](docs/architecture/redesign/01-multi-database-support.md)
+for the full rationale and architecture.
+
+### 1. Start a local Postgres instance
+
+```bash
+docker compose up -d
+```
+Creates a `postgres:16-alpine` container on port **5433** (not 5432, to avoid
+clashing with any host-installed Postgres). Default credentials:
+`postgres` / `postgres`, database `makthab_dev`.
+
+### 2. Set the provider and connection string
+
+Two env vars control which database the app uses:
+
+```bash
+DATABASE_PROVIDER=postgresql
+DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev"
+```
+
+You can set these in `server/.env`, or pass them inline with `cross-env`.
+
+### 3. Migrate and seed
+
+```bash
+npm run db:reset:pg -w server   # migrate + seed the Postgres database
+```
+This creates a fresh PostgreSQL migration history (separate from the SQLite
+one under `server/prisma/sqlite/migrations/`).
+
+### 4. Run the app with Postgres
+
+```bash
+DATABASE_PROVIDER=postgresql npm run dev -w server
+```
+
+Or set `DATABASE_PROVIDER=postgresql` in `server/.env` and run `npm run dev`
+as usual — the flag is read at startup.
+
+### 5. Run the test suite against Postgres
+
+```bash
+node tests/reset-test-db.mjs      # DATABASE_PROVIDER=postgresql picks the postgres schema + makthab_test db
+npm run test:pg -w server
+```
+
+### 6. Import legacy data into Postgres
+
+```bash
+DATABASE_PROVIDER=postgresql npm run migrate:xlsx -w server
+```
+
 ### Seed logins
 
 | Username | Password | Role |
@@ -63,12 +121,21 @@ npm run dev:server     # API only
 npm run dev:client     # SPA only
 npm run build          # build shared, server, client
 npm run typecheck      # typecheck all three workspaces
-npm run db:migrate     # prisma migrate dev   (-w server)
+npm run db:migrate     # prisma migrate dev (Postgres)   (-w server)
 npm run db:seed        # seed lookup tables + logins
-npm run db:reset       # reset + migrate + seed
+npm run db:reset       # reset + migrate + seed (SQLite — default)
 ```
 
-Server-only: `npm run migrate:xlsx -w server` (data import), `npm run test -w server` (Jest integration suite).
+### Server-only scripts
+
+| Script | Purpose | Default provider |
+|---|---|---|
+| `npm run test -w server` | Jest integration suite | SQLite |
+| `npm run test:pg -w server` | Jest against Postgres | PostgreSQL |
+| `npm run migrate:xlsx -w server` | Import legacy Excel data | SQLite |
+| `npm run migrate:xlsx:pg -w server` | Import into Postgres | PostgreSQL |
+| `npm run db:reset:pg -w server` | Reset + migrate + seed Postgres | PostgreSQL |
+| `npm run db:seed:pg -w server` | Seed Postgres only | PostgreSQL |
 
 ## Modules
 
@@ -91,7 +158,8 @@ for the full endpoint and data-model contract.
 `server/.env` (see `server/.env.example`):
 
 ```
-DATABASE_URL="file:../../data/madrasa.db"
+DATABASE_PROVIDER=sqlite           # "sqlite" (default, zero-setup) | "postgresql"
+DATABASE_URL="file:../../../data/madrasa.db"   # SQLite path; for Postgres use "postgresql://..."
 PORT=3000
 CLIENT_ORIGIN=http://localhost:5173
 JWT_SECRET=...
@@ -99,7 +167,27 @@ JWT_REFRESH_SECRET=...
 WHATSAPP_GATEWAY=walink
 ```
 
+> SQLite `DATABASE_URL` is resolved relative to `server/prisma/sqlite/schema.prisma` —
+> `../../../data/madrasa.db` points at the repo-root `data/` dir.
+> For PostgreSQL, set `DATABASE_URL` to a standard connection string and
+> change `DATABASE_PROVIDER=postgresql`.
+
 `client/.env`: `VITE_API_URL=http://localhost:3000/api/v1`.
+
+## Database provider
+
+The app supports two database backends, selected at startup:
+
+| Provider | Use case | Schema file | Migration dir |
+|---|---|---|---|
+| `sqlite` (default) | Local dev, CI, single-machine | `server/prisma/sqlite/schema.prisma` (auto-generated) | `server/prisma/sqlite/migrations/` |
+| `postgresql` | Production, staging | `server/prisma/schema.prisma` (canonical) | `server/prisma/migrations/` |
+
+The SQLite schema is **auto-generated** from the canonical Postgres schema via
+`npm run db:generate:sqlite-schema -w server` and checked into the repo
+like a lockfile. See
+[`docs/architecture/redesign/01-multi-database-support.md`](docs/architecture/redesign/01-multi-database-support.md)
+for the full design.
 
 ## Documentation
 
