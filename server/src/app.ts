@@ -1,7 +1,9 @@
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { type Express } from "express";
-import { env } from "./lib/env";
+import path from "node:path";
+import fs from "node:fs";
+import { env, isProd } from "./lib/env";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { apiRouter } from "./routes";
 
@@ -29,7 +31,21 @@ export function createApp(): Express {
 
   app.use("/api/v1", apiRouter);
 
-  app.use(notFound);
+  // In production, serve the Vite-built React SPA as static files.
+  // The client dist is copied to /app/client-dist in the Dockerfile.
+  if (isProd) {
+    const clientDist = path.resolve(__dirname, "../../client-dist");
+    if (fs.existsSync(clientDist)) {
+      app.use(express.static(clientDist));
+      // SPA fallback: serve index.html for any non-API, non-asset route.
+      app.get("*", (_req, res) => {
+        res.sendFile(path.join(clientDist, "index.html"));
+      });
+    }
+  } else {
+    app.use(notFound);
+  }
+
   app.use(errorHandler);
 
   return app;
