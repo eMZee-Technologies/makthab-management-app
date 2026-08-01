@@ -1,0 +1,96 @@
+# ─── Stage 1: Builder ──────────────────────────────────────────────────────────
+FROM node:20-bookworm-slim AS builder
+
+WORKDIR /build
+
+# Skip Puppeteer's bundled Chromium download — the app uses a custom PDF writer
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
+# Copy workspace manifests first for layer caching
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY server/package.json ./server/
+COPY client/package.json ./client/
+
+# Copy the Prisma schemas before npm ci so the postinstall script (prisma generate) can find them
+COPY server/prisma ./server/prisma
+
+# Install ALL workspace dependencies (server postinstall → prisma generate runs with schema present)
+RUN npm ci
+
+# Copy remaining source
+COPY packages/ ./packages/
+COPY server/src ./server/src
+COPY server/tsconfig.json ./server/tsconfig.json
+COPY client/ ./client/
+COPY data/ ./data/
+COPY docs/source-data ./docs/source-data
+
+# 1. Build shared package (required before server & client TypeScript compilation)
+RUN npm run build:shared
+
+# 2. Build server (TypeScript → dist/)
+RUN npm run build -w server
+
+# 3. Build client SPA with the production API URL baked in
+ARG VITE_API_URL=http://localhost:3000/api/v1
+ENV VITE_API_URL=$VITE_API_URL
+RUN npm run build -w client
+
+# ─── Stage 2: Runtime ──────────────────────────────────────────────────────────
+FROM node:20-bookworm-slim AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV NODE_ENV=production
+
+# Copy the full node_modules tree from builder (includes prisma CLI + generated clients)
+COPY --from=builder /build/node_modules ./node_modules
+COPY --from=builder /build/server/node_modules ./server/node_modules
+
+# Copy workspace manifests (needed by Node.js workspace resolution at runtime)
+COPY package.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY server/package.json ./server/
+COPY client/package.json ./client/
+
+# Copy Prisma schemas + the generated clients (generated at build time by prisma generate)
+COPY --from=builder /build/server/prisma ./server/prisma
+
+# Copy compiled server output
+COPY --from=builder /build/server/dist ./server/dist
+
+# Copy shared dist (needed by server at runtime via CJS require)
+COPY --from=builder /build/packages/shared/dist ./packages/shared/dist
+
+# Copy built client SPA (served as static files by Express in production)
+COPY --from=builder /build/client/dist ./client-dist
+
+# Copy data directory (provides generated files dirs; SQLite not used in production)
+COPY --from=builder /build/data ./data
+
+# Copy the xlsx source data — migrate:xlsx:pg reads this at runtime on first boot
+COPY --from=builder /build/docs/source-data ./docs/source-data
+
+# Entrypoint: migrate on every boot, but gate the one-time xlsx import + seed
+# behind a DB marker so steady-state redeploys start fast (see script header).
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
+
+EXPOSE 3000
+
+# start-period gives the FIRST boot (migrate + seed + xlsx import) room to
+# finish before the orchestrator can mark the container unhealthy; subsequent
+# boots skip that step and become healthy in a couple of seconds. Measured
+# locally: seed + a ~700-row xlsx import took ~2.5min end to end — 300s
+# start-period plus 6*15s of retry margin comfortably covers that with room
+# to spare for a slower cloud DB. Pair this with a matching ECS/ALB
+# healthCheckGracePeriodSeconds (>= start-period) — the container HEALTHCHECK
+# alone doesn't control when the load balancer starts routing.
+HEALTHCHECK --interval=15s --timeout=3s --start-period=300s --retries=6 \
+  CMD curl -f http://localhost:3000/health || exit 1
+
+ENTRYPOINT ["./docker-entrypoint.sh"]

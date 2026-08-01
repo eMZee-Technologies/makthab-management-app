@@ -17,6 +17,7 @@
     "db:generate:sqlite-schema": "tsx prisma/generate-sqlite-schema.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:pg": "cross-env DATABASE_PROVIDER=postgresql tsx prisma/seed.ts",
+    "db:check-seeded:pg": "cross-env DATABASE_PROVIDER=postgresql tsx prisma/check-seeded.ts",
     "db:reset": "prisma migrate reset --force --schema=./prisma/sqlite/schema.prisma",
     "db:reset:pg": "cross-env DATABASE_PROVIDER=postgresql prisma migrate reset --force --schema=./prisma/schema.prisma",
     "migrate:sheets": "tsx prisma/migrate-from-sheets.ts",
