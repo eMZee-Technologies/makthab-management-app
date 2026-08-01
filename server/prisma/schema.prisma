@@ -16,12 +16,7 @@ generator client {
   // build host's target unless every deploy target is listed explicitly.
   // linux-arm64/musl-openssl-3.0.x cover the separate ARM/Alpine deployment
   // platform this was also deployed to.
-  binaryTargets = [
-    "native",
-    "debian-openssl-3.0.x",
-    "linux-arm64-openssl-3.0.x",
-    "linux-musl-arm64-openssl-3.0.x",
-  ]
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-arm64-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
 }
 
 datasource db {

@@ -22,6 +22,13 @@ const HEADER =
   "// docs/architecture/redesign/01-multi-database-support.md §2.2/§2.4).\n\n";
 
 function transform(src: string): string {
+  // binaryTargets is carried over from canonical rather than hardcoded here,
+  // so the two schemas can't drift out of sync on that field either — the
+  // only intentional differences stay datasource provider + generator output.
+  const canonicalGenerator = src.match(/generator\s+client\s*\{[^}]*\}/s)?.[0] ?? "";
+  const binaryTargets = canonicalGenerator.match(/binaryTargets\s*=\s*(\[[^\]]*\])/s)?.[1];
+  const binaryTargetsLine = binaryTargets ? `\n  binaryTargets = ${binaryTargets}` : "";
+
   const out = src
     .replace(
       /datasource\s+db\s*\{[^}]*\}/s,
@@ -29,7 +36,7 @@ function transform(src: string): string {
     )
     .replace(
       /generator\s+client\s*\{[^}]*\}/s,
-      'generator client {\n  provider = "prisma-client-js"\n  output   = "../generated/sqlite-client"\n}'
+      `generator client {\n  provider = "prisma-client-js"\n  output   = "../generated/sqlite-client"${binaryTargetsLine}\n}`
     );
 
   // Defensive self-check: nothing "postgresql" should remain outside the
