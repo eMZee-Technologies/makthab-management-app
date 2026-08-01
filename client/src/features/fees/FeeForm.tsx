@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
@@ -41,7 +41,20 @@ export function FeeForm({ open, onOpenChange, presetStudentId, fee }: Props) {
   const record = useRecordPayment();
   const update = useUpdateFee(fee?.id ?? 0);
   const mutation = isEdit ? update : record;
-  const { options: studentOptions } = useStudentOptions();
+  const { options: baseStudentOptions } = useStudentOptions();
+  // useStudentOptions only loads active students (first 200). When editing a
+  // fee whose student fell outside that set — inactive/graduated, or simply
+  // beyond the page — the Autocomplete would have nothing to pre-select
+  // against, so make sure the fee's own student is always present.
+  const studentOptions = useMemo(() => {
+    if (!fee?.student || baseStudentOptions.some((o) => o.value === fee.student!.id)) {
+      return baseStudentOptions;
+    }
+    return [
+      { value: fee.student.id, label: `${fee.student.admissionNo} — ${fee.student.fullName}` },
+      ...baseStudentOptions,
+    ];
+  }, [baseStudentOptions, fee]);
 
   const {
     register,
@@ -103,7 +116,7 @@ export function FeeForm({ open, onOpenChange, presetStudentId, fee }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl" onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{t(isEdit ? 'fees.edit' : 'fees.collect')}</DialogTitle>
         </DialogHeader>
