@@ -8,8 +8,9 @@
 // for the full rationale (§2.2 "Option A").
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "./generated/postgres-client"
+  provider      = "prisma-client-js"
+  output        = "./generated/postgres-client"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
 }
 
 datasource db {
