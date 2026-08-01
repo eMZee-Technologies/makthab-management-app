@@ -1,8 +1,14 @@
 # Local PostgreSQL for manual dev/testing of the DATABASE_PROVIDER=postgresql
 # path. Not used by `npm run dev`, which defaults to SQLite (see
-# docs/architecture/redesign/01-multi-database-support.md). No app container —
-# the server still runs on the host via `npm run dev -w server` /
-# `DATABASE_PROVIDER=postgresql npm run dev -w server`.
+# docs/architecture/redesign/01-multi-database-support.md). By default (plain
+# `docker compose up`) only `postgres` starts — the server still runs on the
+# host via `npm run dev -w server` / `DATABASE_PROVIDER=postgresql npm run
+# dev -w server`.
+#
+# The `app` service is opt-in (profile "full") and exists to exercise the
+# containerized Dockerfile.txt entrypoint end-to-end locally — the same
+# migrate/seed-gate/healthcheck flow used in production — before pushing a
+# deploy. Run it with: docker compose --profile full up --build
 services:
   postgres:
     image: postgres:16-alpine
@@ -15,6 +21,31 @@ services:
       - "5433:5432" # 5433 to avoid clashing with a host-installed Postgres on 5432
     volumes:
       - makthab_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: Dockerfile.txt
+      args:
+        VITE_API_URL: http://localhost:3000/api/v1
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_PROVIDER: postgresql
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/makthab_dev
+      NODE_ENV: production
+      # FORCE_RESEED: "true"   # uncomment to force-rerun xlsx import + seed
+      # SKIP_SEED: "true"      # uncomment to skip xlsx import + seed entirely
+    ports:
+      - "3000:3000"
 
 volumes:
   makthab_pg_data:

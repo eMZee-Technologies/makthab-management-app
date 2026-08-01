@@ -30,6 +30,10 @@ export function createApp(): Express {
   });
 
   app.use("/api/v1", apiRouter);
+  // Unmatched API routes must still get the JSON error envelope, not the SPA
+  // fallback below (which would otherwise catch them and return index.html
+  // with a 200, or Express's default HTML 404, for any unknown /api/v1/* path).
+  app.use("/api/v1", notFound);
 
   // In production, serve the Vite-built React SPA as static files.
   // The client dist is copied to /app/client-dist in the Dockerfile.
@@ -37,10 +41,12 @@ export function createApp(): Express {
     const clientDist = path.resolve(__dirname, "../../client-dist");
     if (fs.existsSync(clientDist)) {
       app.use(express.static(clientDist));
-      // SPA fallback: serve index.html for any non-API, non-asset route.
+      // SPA fallback: serve index.html for any remaining (non-API, non-asset) route.
       app.get("*", (_req, res) => {
         res.sendFile(path.join(clientDist, "index.html"));
       });
+    } else {
+      app.use(notFound);
     }
   } else {
     app.use(notFound);

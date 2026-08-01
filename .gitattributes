@@ -1,0 +1,6 @@
+# Shell scripts and the Dockerfile are copied byte-for-byte into a Linux
+# container and executed there (docker-entrypoint.sh's #!/bin/sh shebang
+# breaks if it carries a \r). Force LF regardless of core.autocrlf on the
+# checking-out machine.
+*.sh text eol=lf
+Dockerfile* text eol=lf

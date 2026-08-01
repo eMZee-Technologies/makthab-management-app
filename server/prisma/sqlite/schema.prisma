@@ -15,9 +15,9 @@
 // for the full rationale (§2.2 "Option A").
 
 generator client {
-  provider      = "prisma-client-js"
-  output        = "../generated/sqlite-client"
-  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
+  provider = "prisma-client-js"
+  output   = "../generated/sqlite-client"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-arm64-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
 }
 
 datasource db {
@@ -140,12 +140,14 @@ model Staff {
   classesTaught   Class[]
 }
 
+// Application login account. Every user is linked to a Staff record (the actor
+// referenced by FeePayment.collectedBy, Attendance.markedBy, Expense.approvedBy).
 model User {
   id           Int      @id @default(autoincrement())
   username     String   @unique
   passwordHash String
   email        String   @unique
-  role         String
+  role         String // Admin | Accountant | Teacher
   staffId      Int      @unique
   status       String   @default("active")
   createdAt    DateTime @default(now())
@@ -179,9 +181,14 @@ model Class {
 
   teacher    Staff?     @relation(fields: [teacherId], references: [id])
   students   Student[]
-  categories Category[]
+  categories Category[] // categories this class offers (e.g. Noorani Qaida, Hifz Quran)
 }
 
+// Global master list of study-track categories a class can offer (e.g. Noorani
+// Qaida, Naazira Quran, Hifz Quran). Shared across classes; a Class picks the
+// subset it offers via the implicit m2m below. A Student optionally belongs to
+// one category within their class; FeeStructure can optionally vary by
+// category too (categoryId: null on either means "class-wide / no category").
 model Category {
   id        Int      @id @default(autoincrement())
   name      String   @unique
@@ -209,6 +216,10 @@ model ExpenseCategory {
   expenses Expense[]
 }
 
+// Fee amount per class (+ optional category) + academic year (backs GET/POST
+// /fees/structures). categoryId: null means the amount applies class-wide,
+// regardless of category — that's the fallback when no category-specific row
+// exists (see fees.ts structFor()).
 model FeeStructure {
   id             Int    @id @default(autoincrement())
   classId        Int
@@ -223,19 +234,30 @@ model FeeStructure {
   @@unique([classId, categoryId, academicYearId, feeType])
 }
 
+// Institution letterhead (name + address) printed as the header on every
+// generated PDF/XLSX report. Single-row table by convention (id: 1) while the
+// app is single-tenant; the seam for future multi-tenancy — add a tenantId
+// FK here (or make this row the tenant record itself) and scope the lookup
+// by req.tenantId instead of "the one row".
 model OrgProfile {
   id              Int      @id @default(autoincrement())
   name            String
   address         String
   isActive        Boolean  @default(false)
-  headerImagePath String?
+  headerImagePath String? // web app-header background only; NOT embedded in the ASCII PDF writer
   updatedAt       DateTime @updatedAt
 }
 
+// Application role with an attached permission set. Replaces the former
+// hardcoded 3-value role enum: Admin can now define new roles at runtime.
+// `permissions` is a JSON-encoded array of permission-key strings (see
+// @makthab/shared PERMISSION_CATALOG). isSystem rows (Admin/Accountant/Teacher)
+// are seeded and cannot be deleted. User.role stores the role NAME (unchanged),
+// which is resolved to a permission set at login.
 model Role {
   id          Int      @id @default(autoincrement())
   name        String   @unique
-  permissions String
+  permissions String // JSON-encoded string[] of permission keys
   isSystem    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
