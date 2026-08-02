@@ -19,6 +19,7 @@ shared Zod schemas in `packages/shared`.
 ## Key documents
 
 - **[architecture/BUILD_CONTRACT.md](./architecture/BUILD_CONTRACT.md)** — the API contract, roles, data model, and definition of done. If code and this doc disagree, this doc wins.
+- **[architecture/USER_MANAGEMENT_AUTH.md](./architecture/USER_MANAGEMENT_AUTH.md)** — signup / OTP / admin approval / forgot-password plan, API contract, and phased rollout.
 - **[architecture/Madrasa_React_TS_Architecture.docx](./architecture/Madrasa_React_TS_Architecture.docx)** — the target architecture the build follows.
 - **[architecture/PRISMA_5_TO_7_UPGRADE_ANALYSIS.md](./architecture/PRISMA_5_TO_7_UPGRADE_ANALYSIS.md)** — breaking-change impact analysis for a future Prisma 5→7 upgrade, written after a real incident where an uncommitted, half-finished v7 drift broke the app. Not a proposal to do it now — read before ever touching the `prisma`/`@prisma/client` version again.
 - **[migration/MIGRATION.md](./migration/MIGRATION.md)** — running the one-shot data import.

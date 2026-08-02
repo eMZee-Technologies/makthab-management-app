@@ -14,6 +14,14 @@ export const userRepository = {
     return prisma.user.findUnique({ where: { username }, include: { staff: true } });
   },
 
+  findByEmail(email: string) {
+    return prisma.user.findUnique({ where: { email }, include: { staff: true } });
+  },
+
+  findByPhone(phone: string) {
+    return prisma.user.findUnique({ where: { phone }, include: { staff: true } });
+  },
+
   // Plain create with no staff-linking transaction — finance.ts's optional
   // login-provisioning path, where the Staff row already exists.
   create(data: Prisma.UserUncheckedCreateInput) {
@@ -59,8 +67,11 @@ export const userRepository = {
     address?: string | null;
     username: string;
     passwordHash: string;
-    email: string;
+    email?: string | null;
+    phone?: string | null;
     role: string;
+    status?: string;
+    otpMethod?: string | null;
   }) {
     return prisma.$transaction(async (tx) => {
       const staff = await tx.staff.create({
@@ -78,10 +89,12 @@ export const userRepository = {
         data: {
           username: dto.username,
           passwordHash: dto.passwordHash,
-          email: dto.email,
+          email: dto.email ?? null,
+          phone: dto.phone ?? null,
           role: dto.role,
           staffId: staff.id,
-          status: "active",
+          status: dto.status ?? "active",
+          otpMethod: dto.otpMethod ?? null,
         },
         include: { staff: true },
       });
@@ -106,7 +119,60 @@ export const userRepository = {
   },
 
   async setPassword(id: number, passwordHash: string): Promise<void> {
-    await prisma.user.update({ where: { id }, data: { passwordHash } });
+    await prisma.user.update({
+      where: { id },
+      data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null },
+    });
+  },
+
+  async recordLoginFailure(id: number, maxFailures: number, lockoutMinutes: number) {
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return;
+    const attempts = user.failedLoginAttempts + 1;
+    const data: Prisma.UserUpdateInput = { failedLoginAttempts: attempts };
+    if (maxFailures > 0 && attempts >= maxFailures) {
+      data.lockedUntil = new Date(Date.now() + lockoutMinutes * 60 * 1000);
+    }
+    await prisma.user.update({ where: { id }, data });
+  },
+
+  async clearLoginFailures(id: number) {
+    await prisma.user.update({
+      where: { id },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+  },
+
+  async markVerified(id: number, channel: "email" | "sms") {
+    const data: Prisma.UserUpdateInput =
+      channel === "email"
+        ? { emailVerifiedAt: new Date(), status: "pending_approval" }
+        : { phoneVerifiedAt: new Date(), status: "pending_approval" };
+    return prisma.user.update({ where: { id }, data, include: { staff: true } });
+  },
+
+  async setStatus(
+    id: number,
+    status: string,
+    extra?: { role?: string }
+  ) {
+    return prisma.user.update({
+      where: { id },
+      data: {
+        status,
+        ...(extra?.role !== undefined ? { role: extra.role } : {}),
+      },
+      include: { staff: true },
+    });
+  },
+
+  findAdminsWithManagePermission() {
+    // Admins who can approve: users with role name "Admin" (seeded system role
+    // holds users.manage). Fine-grained permission lookup can replace this later.
+    return prisma.user.findMany({
+      where: { role: "Admin", status: "active" },
+      include: { staff: true },
+    });
   },
 };
 

@@ -18,6 +18,10 @@ export { staffRepository } from "./repositories/staff.repository";
 export type { Staff } from "./repositories/staff.repository";
 export { userRepository } from "./repositories/user.repository";
 export type { User } from "./repositories/user.repository";
+export {
+  approvalAuditRepository,
+  adminNotificationRepository,
+} from "./repositories/auth-extras.repository";
 export { salaryPaymentRepository } from "./repositories/salary-payment.repository";
 export type { SalaryPayment } from "./repositories/salary-payment.repository";
 export { classRepository } from "./repositories/class.repository";

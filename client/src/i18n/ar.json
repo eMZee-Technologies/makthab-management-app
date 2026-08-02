@@ -62,7 +62,22 @@
     "username": "اسم المستخدم",
     "password": "كلمة المرور",
     "signingIn": "جارٍ تسجيل الدخول…",
-    "invalidCredentials": "اسم المستخدم أو كلمة المرور غير صحيحة"
+    "invalidCredentials": "اسم المستخدم أو كلمة المرور غير صحيحة",
+    "register": "تسجيل",
+    "registerTitle": "تسجيل",
+    "registerSubtitle": "أنشئ حسابًا. يبدأ الوصول بعد موافقة المسؤول.",
+    "registerVerified": "تم التحقق — سيراجع المسؤول حسابك.",
+    "registerEnterOtp": "أدخل الرمز المكوّن من 6 أرقام المرسل إلى بريدك.",
+    "fullName": "الاسم الكامل",
+    "email": "البريد الإلكتروني",
+    "mobile": "رقم الجوال",
+    "mobileHint": "أدخل رقم جوال مكوّنًا من 10 أرقام فقط.",
+    "passwordHint": "8 أحرف على الأقل، مع حرف كبير وصغير ورقم (مثل Secret123).",
+    "verificationCode": "رمز التحقق",
+    "verify": "تحقق",
+    "backToSignIn": "العودة لتسجيل الدخول",
+    "alreadyHaveAccount": "لديك حساب بالفعل؟",
+    "forgotPassword": "نسيت كلمة المرور؟"
   },
   "dashboard": {
     "title": "لوحة التحكم",
@@ -249,7 +264,15 @@
     "deactivated": "تم إلغاء تنشيط المستخدم",
     "reactivated": "تم إعادة تنشيط المستخدم",
     "confirmDeactivateTitle": "إلغاء تنشيط المستخدم",
-    "confirmDeactivate": "هل تريد إلغاء تنشيط {{name}}؟ لن يتمكن من تسجيل الدخول حتى إعادة التنشيط."
+    "confirmDeactivate": "هل تريد إلغاء تنشيط {{name}}؟ لن يتمكن من تسجيل الدخول حتى إعادة التنشيط.",
+    "approve": "الموافقة على التسجيل",
+    "reject": "رفض التسجيل",
+    "approved": "تمت الموافقة على المستخدم",
+    "rejected": "تم رفض المستخدم",
+    "rejectReason": "سبب الرفض",
+    "pendingApproval": "بانتظار الموافقة",
+    "pendingVerification": "بانتظار التحقق",
+    "rejectedStatus": "مرفوض"
   },
   "reports": {
     "title": "التقارير",

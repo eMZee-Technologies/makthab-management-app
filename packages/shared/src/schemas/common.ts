@@ -19,6 +19,12 @@ export const phoneSchema = z
   .trim()
   .regex(/^[0-9+]{7,15}$/, "Invalid phone number");
 
+// Mobile: exactly 10 digits (no country code / separators).
+export const mobile10Schema = z
+  .string()
+  .trim()
+  .regex(/^[0-9]{10}$/, "Mobile number must be exactly 10 digits");
+
 export const genderSchema = z.enum(["male", "female"]);
 
 export const paymentMethodSchema = z.enum([

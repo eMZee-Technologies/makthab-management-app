@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { GraduationCap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -75,6 +75,14 @@ export function LoginPage() {
               {login.isPending && <Spinner className="me-2" />}
               {login.isPending ? t('auth.signingIn') : t('auth.login')}
             </Button>
+            <div className="flex justify-between gap-2 text-sm text-muted-foreground">
+              <Link className="text-primary underline-offset-4 hover:underline" to="/register">
+                {t('auth.register')}
+              </Link>
+              <Link className="text-primary underline-offset-4 hover:underline" to="/forgot-password">
+                {t('auth.forgotPassword')}
+              </Link>
+            </div>
           </form>
         </CardContent>
       </Card>

@@ -66,3 +66,21 @@ export function useResetUserPassword(id: number) {
       unwrap<{ id: number }>((await api.post(`/users/${id}/reset-password`, { password })).data),
   });
 }
+
+export function useApproveUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: number; role?: string; note?: string }) =>
+      unwrap<User>((await api.post(`/users/${input.id}/approve`, { role: input.role, note: input.note })).data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  });
+}
+
+export function useRejectUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: number; reason: string }) =>
+      unwrap<User>((await api.post(`/users/${input.id}/reject`, { reason: input.reason })).data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  });
+}

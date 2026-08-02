@@ -76,6 +76,19 @@ export const env = {
   whatsappBusinessApiVersion: process.env.WHATSAPP_BUSINESS_API_VERSION ?? "v21.0",
   puppeteerExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
   databaseProvider: databaseProvider(),
+  // Optional outbound delivery for OTP / admin alerts (MVP logs when unset).
+  smtpHost: process.env.SMTP_HOST || undefined,
+  smtpPort: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : undefined,
+  smtpUser: process.env.SMTP_USER || undefined,
+  smtpPass: process.env.SMTP_PASS || undefined,
+  smtpFrom: process.env.SMTP_FROM || undefined,
+  smsProvider: process.env.SMS_PROVIDER || undefined,
+  smsApiKey: process.env.SMS_API_KEY || undefined,
+  // Login lockout after N consecutive failures (0 disables lockout).
+  loginMaxFailures: Number(process.env.LOGIN_MAX_FAILURES ?? 8),
+  loginLockoutMinutes: Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15),
+  // Default role assigned on self-signup (admin may override on approve).
+  signupDefaultRole: process.env.SIGNUP_DEFAULT_ROLE ?? "Teacher",
 };
 
 export const isProd = env.nodeEnv === "production";

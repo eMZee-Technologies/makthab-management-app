@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Pencil, KeyRound, UserX, UserCheck } from 'lucide-react';
+import { Plus, Pencil, KeyRound, UserX, UserCheck, Check, X } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,7 +21,7 @@ import { SortableTableHead, useSort } from '@/components/SortableTableHead';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/ui/use-toast';
 import { api, extractApiError } from '@/api/client';
-import { useUsers, useDeleteUser, useReactivateUser } from './api';
+import { useUsers, useDeleteUser, useReactivateUser, useApproveUser, useRejectUser } from './api';
 import { useRoles } from '../roles/api';
 import { UserForm } from './UserForm';
 import { ResetPasswordDialog } from './ResetPasswordDialog';
@@ -84,6 +84,8 @@ export function UsersPage() {
 
   const del = useDeleteUser();
   const reactivate = useReactivateUser();
+  const approve = useApproveUser();
+  const reject = useRejectUser();
   const { data: roles } = useRoles();
 
   const { data, isLoading, isError, refetch } = useUsers({
@@ -126,6 +128,28 @@ export function UsersPage() {
       onSuccess: () => toast({ title: t('users.reactivated'), variant: 'success' }),
       onError: (err) => toast({ title: extractApiError(err).message, variant: 'destructive' }),
     });
+  };
+
+  const handleApprove = (u: User) => {
+    approve.mutate(
+      { id: u.id },
+      {
+        onSuccess: () => toast({ title: t('users.approved'), variant: 'success' }),
+        onError: (err) => toast({ title: extractApiError(err).message, variant: 'destructive' }),
+      }
+    );
+  };
+
+  const handleReject = (u: User) => {
+    const reason = window.prompt(t('users.rejectReason'));
+    if (!reason) return;
+    reject.mutate(
+      { id: u.id, reason },
+      {
+        onSuccess: () => toast({ title: t('users.rejected'), variant: 'success' }),
+        onError: (err) => toast({ title: extractApiError(err).message, variant: 'destructive' }),
+      }
+    );
   };
 
   return (
@@ -176,6 +200,9 @@ export function UsersPage() {
                 <SelectItem value="all">{t('common.all')}</SelectItem>
                 <SelectItem value="active">{t('common.active')}</SelectItem>
                 <SelectItem value="inactive">{t('common.inactive')}</SelectItem>
+                <SelectItem value="pending_approval">{t('users.pendingApproval')}</SelectItem>
+                <SelectItem value="pending_verification">{t('users.pendingVerification')}</SelectItem>
+                <SelectItem value="rejected">{t('users.rejectedStatus')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -224,12 +251,40 @@ export function UsersPage() {
                     </TableCell>
                     <TableCell>{u.contactNo ?? '—'}</TableCell>
                     <TableCell>
-                      <Badge variant={u.status === 'active' ? 'success' : 'secondary'}>
-                        {t(`common.${u.status === 'active' ? 'active' : 'inactive'}`)}
+                      <Badge
+                        variant={
+                          u.status === 'active'
+                            ? 'success'
+                            : u.status === 'pending_approval'
+                              ? 'default'
+                              : 'secondary'
+                        }
+                      >
+                        {u.status}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
+                        {u.status === 'pending_approval' && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title={t('users.approve')}
+                              onClick={() => handleApprove(u)}
+                            >
+                              <Check className="h-4 w-4 text-primary" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title={t('users.reject')}
+                              onClick={() => handleReject(u)}
+                            >
+                              <X className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
@@ -255,7 +310,7 @@ export function UsersPage() {
                           >
                             <UserX className="h-4 w-4 text-destructive" />
                           </Button>
-                        ) : (
+                        ) : u.status === 'inactive' ? (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -264,7 +319,7 @@ export function UsersPage() {
                           >
                             <UserCheck className="h-4 w-4 text-primary" />
                           </Button>
-                        )}
+                        ) : null}
                       </div>
                     </TableCell>
                   </TableRow>
