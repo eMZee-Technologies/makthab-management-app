@@ -160,32 +160,34 @@ login/signup fail with:
 The column `User.phone` does not exist in the current database.
 ```
 
-Your stack trace shows `postgres-client` → you are on **PostgreSQL**
-(`DATABASE_PROVIDER=postgresql`). Apply the Postgres migration, then restart:
+Your stack trace shows `postgres-client` → the **running API** was on PostgreSQL.
+`db:deploy` must use the same provider as `server/.env`. Typical Windows failure:
+
+```
+Error: the URL must start with the protocol `file:`
+[db:deploy] DATABASE_PROVIDER=sqlite
+```
+
+That means either:
+1. `DATABASE_PROVIDER` was missing when the script ran (fixed: script now loads `.env`), or
+2. `server/.env` has a **mismatch** — e.g. `DATABASE_PROVIDER=sqlite` with a `postgresql://…` URL
+   (or the reverse).
+
+**Fix `server/.env` to one consistent pair**, then deploy:
+
+```env
+# Option A — SQLite (simple local)
+DATABASE_PROVIDER=sqlite
+DATABASE_URL="file:../../../data/madrasa.db"
+
+# Option B — PostgreSQL (matches postgres-client stack traces)
+DATABASE_PROVIDER=postgresql
+DATABASE_URL="postgresql://USER:PASS@localhost:5432/makthab"
+```
 
 ```bash
-# from repo root — uses DATABASE_PROVIDER from server/.env
 npm run db:deploy -w server
-
-# or explicitly:
-cd server
-npx prisma migrate deploy --schema=./prisma/schema.prisma
-npm run db:seed:pg   # optional if you wiped / need seed users
-```
-
-If you use **SQLite** instead (`DATABASE_PROVIDER=sqlite` or unset):
-
-```bash
-npm run db:deploy:sqlite -w server
-# or wipe + reseed:
-npm run db:reset -w server
-```
-
-Confirm columns exist (Postgres):
-
-```sql
-SELECT column_name FROM information_schema.columns
-WHERE table_name = 'User' AND column_name = 'phone';
+# restart npm run dev afterward
 ```
 
 ## Branch & PR checklist
