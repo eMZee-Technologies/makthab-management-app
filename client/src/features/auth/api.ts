@@ -1,5 +1,16 @@
 import { useMutation } from '@tanstack/react-query';
-import type { LoginRequest, LoginResponse } from '@makthab/shared';
+import type {
+  LoginRequest,
+  LoginResponse,
+  SignupRequest,
+  SignupResponse,
+  VerifyOtpRequest,
+  VerifyOtpResponse,
+  ForgotPasswordRequest,
+  ForgotPasswordResponse,
+  ResetPasswordRequest,
+  ResendOtpRequest,
+} from '@makthab/shared';
 import { api, unwrap } from '@/api/client';
 import { useAuthStore } from '@/store/authStore';
 
@@ -15,6 +26,41 @@ export function useLogin() {
     onSuccess: (data) => {
       setAuth(data.accessToken, data.refreshToken, data.user);
     },
+  });
+}
+
+export function useSignup() {
+  return useMutation({
+    mutationFn: async (input: SignupRequest) =>
+      unwrap<SignupResponse>((await api.post('/auth/signup', input)).data),
+  });
+}
+
+export function useVerifyOtp() {
+  return useMutation({
+    mutationFn: async (input: VerifyOtpRequest) =>
+      unwrap<VerifyOtpResponse>((await api.post('/auth/verify-otp', input)).data),
+  });
+}
+
+export function useResendOtp() {
+  return useMutation({
+    mutationFn: async (input: ResendOtpRequest) =>
+      unwrap<SignupResponse>((await api.post('/auth/resend-otp', input)).data),
+  });
+}
+
+export function useForgotPassword() {
+  return useMutation({
+    mutationFn: async (input: ForgotPasswordRequest) =>
+      unwrap<ForgotPasswordResponse>((await api.post('/auth/forgot-password', input)).data),
+  });
+}
+
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: async (input: ResetPasswordRequest) =>
+      unwrap<{ ok: boolean; message: string }>((await api.post('/auth/reset-password', input)).data),
   });
 }
 

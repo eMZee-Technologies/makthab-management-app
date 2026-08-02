@@ -141,7 +141,8 @@ export interface Staff {
 export interface User {
   id: number;
   username: string;
-  email: string;
+  email: string | null;
+  phone?: string | null;
   role: string;
   status: string;
   staffId: number;

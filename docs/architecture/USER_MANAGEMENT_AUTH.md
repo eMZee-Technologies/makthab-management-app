@@ -1,0 +1,177 @@
+# User Management — Signup, OTP, Admin Approval, Forgot Password
+
+**Status:** MVP scaffolding implemented on branch `cursor/user-management-admin-approval-0884`.
+**Stack (confirmed):** Makthab’s existing architecture — **not** a greenfield Node/Postgres app.
+
+| Layer | Choice | Why |
+|---|---|---|
+| API | Node 20 + Express + TypeScript | Already the BUILD_CONTRACT stack |
+| DB | Prisma 5 + **SQLite (dev/test) / PostgreSQL (prod)** | Dual-provider already wired (`DATABASE_PROVIDER`) |
+| Auth tokens | JWT Bearer (`Authorization` header) + refresh token | Existing login/refresh; Bearer-in-header avoids classic CSRF |
+| Password hashing | bcryptjs (cost 12) | Already used; OTP codes hashed at cost 10 |
+| Client | React 18 + Vite + Tailwind + shadcn | Existing SPA |
+| Shared contracts | Zod in `@makthab/shared` | Single source for request DTOs |
+
+## Scope decisions (vs the original assumptions)
+
+1. **No separate Admins table** — use `User.role` + `users.manage` permission (existing RBAC).
+2. **Self-signup is additive** — Admin `POST /users` still creates **active** accounts immediately.
+3. **Email OR phone** — `User.email` and `User.phone` are both optional/unique; signup Zod requires at least one and that it matches `otpMethod`.
+4. **CSRF** — not required while tokens stay in memory/`Authorization` (not cookies). If refresh moves to httpOnly cookies, add double-submit CSRF before that change ships.
+5. **MFA** — columns `mfaEnabled` / `mfaSecret` are scaffolded; TOTP enroll/verify is Phase 2.
+6. **OTP delivery** — console/Winston logger MVP; optional `SMTP_*` / `SMS_*` env hooks for Phase 2 providers.
+
+## Account lifecycle
+
+```
+signup ──► pending_verification ──(OTP ok)──► pending_approval ──(admin approve)──► active
+                │                                      │
+                │                                      └──(admin reject)──► rejected
+                └── login blocked (same 401 as bad password — anti-enumeration)
+```
+
+Forgot password: `forgot-password` → OTP → `resetToken` → `reset-password` (active / pending_approval only).
+
+## API contract (`/api/v1`)
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/auth/signup` | public + rate limit | Creates Staff+User `pending_verification`, sends OTP |
+| POST | `/auth/verify-otp` | public + rate limit | signup → `pending_approval` + admin notification; password_reset → `resetToken` |
+| POST | `/auth/resend-otp` | public + rate limit | 60s cooldown |
+| POST | `/auth/forgot-password` | public + rate limit | Always 200; anti-enumeration |
+| POST | `/auth/reset-password` | public + rate limit | Consumes `resetToken` |
+| POST | `/auth/login` | public + rate limit | Lockout after `LOGIN_MAX_FAILURES`; inactive statuses → 401 |
+| POST | `/auth/refresh` | public + rate limit | Unchanged semantics |
+| POST | `/auth/logout` | public | Client discards tokens |
+| GET | `/users?status=pending_approval` | `users.manage` | Approval queue |
+| POST | `/users/:id/approve` | `users.manage` | Audit row `approved` |
+| POST | `/users/:id/reject` | `users.manage` | Audit row `rejected` |
+| GET | `/users/:id/approval-audit` | `users.manage` | Audit history |
+| GET | `/users/notifications` | `users.manage` | In-app admin alerts |
+| POST | `/users/notifications/:id/read` | `users.manage` | Mark read |
+
+### Example: signup → OTP → approve → login
+
+```http
+POST /api/v1/auth/signup
+{ "fullName":"Amina Khan","username":"amina","password":"Secret123",
+  "email":"amina@example.com","otpMethod":"email" }
+
+→ { "data": { "challengeId":"…", "message":"…", "devOtp":"123456" } }  # devOtp non-prod only
+
+POST /api/v1/auth/verify-otp
+{ "challengeId":"…", "code":"123456" }
+
+→ { "data": { "purpose":"signup", "status":"pending_approval", "message":"…" } }
+
+POST /api/v1/users/42/approve   Authorization: Bearer <admin>
+{ "role":"Teacher", "note":"Verified with Imam" }
+
+POST /api/v1/auth/login
+{ "username":"amina", "password":"Secret123" }
+→ { "data": { "accessToken","refreshToken","user" } }
+```
+
+### Example: forgot password
+
+```http
+POST /api/v1/auth/forgot-password
+{ "username":"amina" }   # or email / phone
+
+POST /api/v1/auth/verify-otp
+{ "challengeId":"…", "code":"…" }
+→ { "data": { "purpose":"password_reset", "resetToken":"…" } }
+
+POST /api/v1/auth/reset-password
+{ "resetToken":"…", "password":"NewSecret1" }
+```
+
+## Data model (additions)
+
+- **User** — `phone`, `otpMethod`, `emailVerifiedAt`, `phoneVerifiedAt`, `failedLoginAttempts`, `lockedUntil`, `mfaEnabled`, `mfaSecret`; `email` nullable; expanded `status`.
+- **OtpChallenge** — hashed 6-digit codes, attempt limits, expiry.
+- **PasswordResetToken** — issued after password-reset OTP success.
+- **UserApprovalAudit** — immutable approve/reject trail.
+- **AdminNotification** — in-app queue for admins.
+
+Migrations: `server/prisma/migrations/20260802140000_user_management_auth` (Postgres) and `server/prisma/sqlite/migrations/20260802140000_user_management_auth` (SQLite).
+
+## Security controls (MVP)
+
+| Control | Implementation |
+|---|---|
+| Password hashing | bcryptjs cost 12 |
+| OTP hashing | bcryptjs cost 10; never store plaintext |
+| Password strength | `strongPasswordSchema` on signup / self-reset |
+| Rate limiting | `express-rate-limit` on auth + OTP routes |
+| Account lockout | `failedLoginAttempts` + `lockedUntil` |
+| Anti-enumeration | Uniform login / forgot-password / inactive-status errors |
+| Validation | Zod via existing `validateBody` (HTTP 400) |
+| Audit | `UserApprovalAudit` on approve/reject |
+| CSRF | N/A for Bearer header; revisit if cookie auth ships |
+| MFA | Schema only (Phase 2) |
+
+## Environment variables
+
+See `server/.env.example`. New keys: `SMTP_*`, `SMS_*`, `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES`, `SIGNUP_DEFAULT_ROLE`.
+
+## File map
+
+```
+packages/shared/src/schemas/auth.ts     # signup/OTP/forgot/approve DTOs
+packages/shared/src/schemas/user.ts     # status enum + phone on UserDto
+server/prisma/schema.prisma             # User extensions + new models
+server/src/lib/auth/{otp,notifier,passwordReset,rateLimit}.ts
+server/src/routes/auth.ts               # public auth lifecycle
+server/src/routes/users.ts              # approve/reject/notifications
+server/tests/auth-lifecycle.test.ts
+docs/architecture/USER_MANAGEMENT_AUTH.md  # this file
+```
+
+## Phased rollout
+
+### Phase 1 — MVP (this PR)
+- Signup + OTP + admin approve/reject + audit + in-app notification
+- Forgot / reset password
+- Rate limit + lockout + strong password on self-service
+- Integration tests in `auth-lifecycle.test.ts`
+- Client: links on login + thin signup/forgot pages (scaffolding)
+
+### Phase 2 — Hardening
+- Real SMTP (SES/Nodemailer) + SMS (Twilio/MSG91)
+- Refresh-token revocation table (security redesign §3.2)
+- Optional TOTP MFA enroll/verify
+- Cookie-based refresh + CSRF if product requires it
+- Admin email digest / WhatsApp alert for pending signups
+
+### Phase 3 — Product polish
+- Approval queue UI with bulk actions
+- Signup analytics / abandonment metrics
+- CAPTCHA on signup when abuse appears
+
+## Branch & PR checklist
+
+```bash
+git checkout -b cursor/user-management-admin-approval-0884   # cloud agent naming
+# (preferred product name was feature/user-management-admin-approval —
+#  use cursor/*-0884 in this environment)
+
+npm install
+npm run build:shared
+npm run db:generate -w server && npm run db:generate:sqlite -w server
+# SQLite local:
+cd server && npx prisma migrate deploy --schema=./prisma/sqlite/schema.prisma && npm run db:seed
+npm run typecheck
+cd server && DATABASE_URL="file:./test.db" npx prisma migrate reset --force --schema=./prisma/sqlite/schema.prisma
+cd server && DATABASE_URL="file:./test.db" npx jest tests/auth-lifecycle.test.ts --runInBand
+```
+
+PR checklist:
+- [ ] Shared schemas exported; client alias picks them up
+- [ ] Both Postgres + SQLite migrations present
+- [ ] `npm run typecheck` green
+- [ ] Auth lifecycle Jest suite green
+- [ ] Seeded admin can approve; pending user cannot login before approve
+- [ ] `devOtp` absent when `NODE_ENV=production`
+- [ ] BUILD_CONTRACT changelog updated

@@ -62,7 +62,9 @@
     "username": "Username",
     "password": "Password",
     "signingIn": "Signing in…",
-    "invalidCredentials": "Invalid username or password"
+    "invalidCredentials": "Invalid username or password",
+    "requestAccess": "Request access",
+    "forgotPassword": "Forgot password?"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -249,7 +251,15 @@
     "deactivated": "User deactivated",
     "reactivated": "User reactivated",
     "confirmDeactivateTitle": "Deactivate User",
-    "confirmDeactivate": "Deactivate {{name}}? They will no longer be able to sign in until reactivated."
+    "confirmDeactivate": "Deactivate {{name}}? They will no longer be able to sign in until reactivated.",
+    "approve": "Approve signup",
+    "reject": "Reject signup",
+    "approved": "User approved",
+    "rejected": "User rejected",
+    "rejectReason": "Reason for rejection",
+    "pendingApproval": "Pending approval",
+    "pendingVerification": "Pending verification",
+    "rejectedStatus": "Rejected"
   },
   "reports": {
     "title": "Reports",

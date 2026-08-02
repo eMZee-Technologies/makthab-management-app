@@ -62,7 +62,9 @@
     "username": "اسم المستخدم",
     "password": "كلمة المرور",
     "signingIn": "جارٍ تسجيل الدخول…",
-    "invalidCredentials": "اسم المستخدم أو كلمة المرور غير صحيحة"
+    "invalidCredentials": "اسم المستخدم أو كلمة المرور غير صحيحة",
+    "requestAccess": "طلب الوصول",
+    "forgotPassword": "نسيت كلمة المرور؟"
   },
   "dashboard": {
     "title": "لوحة التحكم",
@@ -249,7 +251,15 @@
     "deactivated": "تم إلغاء تنشيط المستخدم",
     "reactivated": "تم إعادة تنشيط المستخدم",
     "confirmDeactivateTitle": "إلغاء تنشيط المستخدم",
-    "confirmDeactivate": "هل تريد إلغاء تنشيط {{name}}؟ لن يتمكن من تسجيل الدخول حتى إعادة التنشيط."
+    "confirmDeactivate": "هل تريد إلغاء تنشيط {{name}}؟ لن يتمكن من تسجيل الدخول حتى إعادة التنشيط.",
+    "approve": "الموافقة على التسجيل",
+    "reject": "رفض التسجيل",
+    "approved": "تمت الموافقة على المستخدم",
+    "rejected": "تم رفض المستخدم",
+    "rejectReason": "سبب الرفض",
+    "pendingApproval": "بانتظار الموافقة",
+    "pendingVerification": "بانتظار التحقق",
+    "rejectedStatus": "مرفوض"
   },
   "reports": {
     "title": "التقارير",

@@ -17,4 +17,8 @@ export type {
   AcademicYear,
   OrgProfile,
   Role,
+  OtpChallenge,
+  PasswordResetToken,
+  UserApprovalAudit,
+  AdminNotification,
 } from "../../prisma/generated/postgres-client";

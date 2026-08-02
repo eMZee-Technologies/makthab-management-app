@@ -142,18 +142,108 @@ model Staff {
 
 // Application login account. Every user is linked to a Staff record (the actor
 // referenced by FeePayment.collectedBy, Attendance.markedBy, Expense.approvedBy).
+//
+// status: active | inactive | pending_verification | pending_approval | rejected
+// Self-signup accounts start pending_verification → pending_approval → active
+// (after admin approve). Admin-provisioned accounts are created as active.
 model User {
-  id           Int      @id @default(autoincrement())
-  username     String   @unique
-  passwordHash String
-  email        String   @unique
-  role         String // Admin | Accountant | Teacher
-  staffId      Int      @unique
-  status       String   @default("active")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                  Int       @id @default(autoincrement())
+  username            String    @unique
+  passwordHash        String
+  email               String?   @unique // optional when registering with phone only
+  phone               String?   @unique // E.164-ish digits; optional when email-only
+  role                String // role NAME (DB-backed Role.name)
+  staffId             Int       @unique
+  status              String    @default("active")
+  otpMethod           String? // email | sms — preferred channel for OTP
+  emailVerifiedAt     DateTime?
+  phoneVerifiedAt     DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  mfaEnabled          Boolean   @default(false) // Phase 2: optional TOTP
+  mfaSecret           String? // encrypted TOTP secret (unused until MFA ships)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  staff Staff @relation(fields: [staffId], references: [id])
+  staff              Staff                @relation(fields: [staffId], references: [id])
+  otpChallenges      OtpChallenge[]
+  passwordResets     PasswordResetToken[]
+  approvalSubjectOf  UserApprovalAudit[]  @relation("ApprovalSubject")
+  approvalActorOf    UserApprovalAudit[]  @relation("ApprovalActor")
+  notifications      AdminNotification[]
+}
+
+// One-time passcode challenge for signup verification and password reset.
+// codeHash is bcrypt of the 6-digit code; never store plaintext OTPs.
+model OtpChallenge {
+  id          String    @id // cuid
+  userId      Int?
+  purpose     String // signup | password_reset
+  channel     String // email | sms
+  destination String // email address or phone the OTP was sent to
+  codeHash    String
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([destination, purpose])
+  @@index([userId])
+}
+
+// Short-lived token issued after a successful password_reset OTP verify.
+model PasswordResetToken {
+  id         String    @id // cuid
+  userId     Int
+  tokenHash  String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+// Immutable audit trail of admin approve/reject decisions on signup accounts.
+model UserApprovalAudit {
+  id             Int      @id @default(autoincrement())
+  userId         Int
+  actorId        Int
+  action         String // approved | rejected
+  reason         String?
+  previousStatus String
+  newStatus      String
+  roleAssigned   String?
+  createdAt      DateTime @default(now())
+
+  user  User @relation("ApprovalSubject", fields: [userId], references: [id])
+  actor User @relation("ApprovalActor", fields: [actorId], references: [id])
+
+  @@index([userId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+// In-app admin notifications (e.g. new signup awaiting approval). Email/SMS
+// delivery is handled by the notifier adapter; this table backs the web UI.
+model AdminNotification {
+  id        Int       @id @default(autoincrement())
+  userId    Int // admin recipient
+  type      String // signup_pending | signup_approved | signup_rejected
+  title     String
+  body      String
+  metaJson  String? // JSON blob (subjectUserId, etc.)
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, readAt])
+  @@index([createdAt])
 }
 
 model SalaryPayment {

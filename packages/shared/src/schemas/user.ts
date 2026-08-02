@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { phoneSchema, sortOrderSchema, roleNameSchema, studentStatusSchema } from "./common";
+import { phoneSchema, sortOrderSchema, roleNameSchema } from "./common";
+import { userAccountStatusSchema } from "./auth";
 
 // UserCreateDto — POST /users. A "new user" provisions a Staff record and a
 // linked User login together (contactNo/whatsappNo/address live on Staff;
@@ -9,6 +10,7 @@ export const userCreateSchema = z.object({
   username: z.string().trim().min(3),
   password: z.string().min(6),
   email: z.string().trim().email(),
+  phone: phoneSchema.optional(),
   role: roleNameSchema,
   contactNo: phoneSchema,
   whatsappNo: phoneSchema,
@@ -24,13 +26,14 @@ export const userUpdateSchema = z
   .object({
     fullName: z.string().trim().min(1),
     email: z.string().trim().email(),
+    phone: phoneSchema.nullable(),
     role: roleNameSchema,
     contactNo: phoneSchema,
     whatsappNo: phoneSchema,
     address: z.string().trim(),
   })
   .partial()
-  .extend({ status: studentStatusSchema.optional() });
+  .extend({ status: userAccountStatusSchema.optional() });
 export type UserUpdateDto = z.infer<typeof userUpdateSchema>;
 
 // UserPasswordResetDto — POST /users/:id/reset-password
@@ -56,7 +59,7 @@ export const userListQuery = z.object({
   sortBy: userSortField.optional(),
   sortOrder: sortOrderSchema.default("asc"),
   role: roleNameSchema.optional(),
-  status: studentStatusSchema.optional(),
+  status: userAccountStatusSchema.optional(),
 });
 export type UserListQuery = z.infer<typeof userListQuery>;
 
@@ -64,7 +67,8 @@ export type UserListQuery = z.infer<typeof userListQuery>;
 export type UserDto = {
   id: number;
   username: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
   role: string;
   status: string;
   staffId: number;
