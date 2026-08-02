@@ -76,8 +76,8 @@ export function LoginPage() {
               {login.isPending ? t('auth.signingIn') : t('auth.login')}
             </Button>
             <div className="flex justify-between gap-2 text-sm text-muted-foreground">
-              <Link className="text-primary underline-offset-4 hover:underline" to="/signup">
-                {t('auth.requestAccess')}
+              <Link className="text-primary underline-offset-4 hover:underline" to="/register">
+                {t('auth.register')}
               </Link>
               <Link className="text-primary underline-offset-4 hover:underline" to="/forgot-password">
                 {t('auth.forgotPassword')}

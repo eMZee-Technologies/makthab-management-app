@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { phoneSchema } from "./common";
+import { phoneSchema, mobile10Schema } from "./common";
 
 // ---- Password policy (self-service flows) ---------------------------------
 // Admin-provisioned passwords stay at min(6) in user.ts for backward compat;
@@ -66,7 +66,7 @@ export const signupRequestSchema = z
     username: z.string().trim().min(3).max(64),
     password: strongPasswordSchema,
     email: z.string().trim().email().optional(),
-    phone: phoneSchema.optional(),
+    phone: z.union([mobile10Schema, phoneSchema]).optional(),
     otpMethod: otpMethodSchema,
     // Optional requested role; admin may override on approval. Defaults to Teacher.
     requestedRole: z.string().trim().min(1).optional(),

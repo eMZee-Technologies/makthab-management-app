@@ -21,6 +21,7 @@ describeApi("auth signup / OTP / approval / forgot-password", () => {
         username,
         password,
         email,
+        phone: "9876543210",
         otpMethod: "email",
       });
     expect(signup.status).toBe(201);
@@ -90,10 +91,27 @@ describeApi("auth signup / OTP / approval / forgot-password", () => {
         username: uniq(),
         password: "password",
         email: `${uniq()}@example.com`,
+        phone: "9876543210",
         otpMethod: "email",
       });
     expect(r.status).toBe(400);
     expect(r.body.error.code).toBe("validation_error");
+  });
+
+  it("POST /auth/signup rejects non-10-digit mobile", async () => {
+    const r = await request(app())
+      .post(`${API}/auth/signup`)
+      .send({
+        fullName: "Bad Phone",
+        username: uniq(),
+        password: "Secret123",
+        email: `${uniq()}@example.com`,
+        phone: "12345",
+        otpMethod: "email",
+      });
+    expect(r.status).toBe(400);
+    expect(r.body.error.code).toBe("validation_error");
+    expect(String(r.body.error.message)).toMatch(/phone|Mobile|digit/i);
   });
 
   it("POST /auth/forgot-password → verify-otp → reset-password", async () => {
@@ -160,6 +178,7 @@ describeApi("auth signup / OTP / approval / forgot-password", () => {
         username,
         password,
         email: `${username}@example.com`,
+        phone: "9123456780",
         otpMethod: "email",
       });
     const { challengeId, devOtp } = signup.body.data;

@@ -3,7 +3,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { strongPasswordSchema } from '@makthab/shared';
+import { strongPasswordSchema, mobile10Schema } from '@makthab/shared';
 import { GraduationCap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,16 +14,19 @@ import { LocaleToggle } from '@/components/layout/LocaleToggle';
 import { useAuthStore } from '@/store/authStore';
 import { formatApiErrorMessage } from '@/api/client';
 import { useSignup, useVerifyOtp } from './api';
+import { useTranslation } from 'react-i18next';
 
-const signupFormSchema = z.object({
+const registerFormSchema = z.object({
   fullName: z.string().trim().min(1, 'Full name is required'),
   username: z.string().trim().min(3, 'Username must be at least 3 characters').max(64),
   email: z.string().trim().email('Enter a valid email'),
+  phone: mobile10Schema,
   password: strongPasswordSchema,
 });
-type SignupForm = z.infer<typeof signupFormSchema>;
+type RegisterForm = z.infer<typeof registerFormSchema>;
 
 export function SignupPage() {
+  const { t } = useTranslation();
   const isAuthed = useAuthStore((s) => s.isAuthenticated());
   const signup = useSignup();
   const verify = useVerifyOtp();
@@ -35,16 +38,23 @@ export function SignupPage() {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<SignupForm>({
-    resolver: zodResolver(signupFormSchema),
-    defaultValues: { fullName: '', username: '', password: '', email: '' },
+  } = useForm<RegisterForm>({
+    resolver: zodResolver(registerFormSchema),
+    defaultValues: { fullName: '', username: '', password: '', email: '', phone: '' },
   });
 
   if (isAuthed) return <Navigate to="/" replace />;
 
   const onSignup = handleSubmit((values) => {
     signup.mutate(
-      { ...values, otpMethod: 'email' },
+      {
+        fullName: values.fullName,
+        username: values.username,
+        email: values.email,
+        phone: values.phone,
+        password: values.password,
+        otpMethod: 'email',
+      },
       {
         onSuccess: (data) => {
           setChallengeId(data.challengeId);
@@ -77,49 +87,63 @@ export function SignupPage() {
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <GraduationCap className="h-6 w-6" />
           </div>
-          <CardTitle>Request access</CardTitle>
+          <CardTitle>{t('auth.registerTitle')}</CardTitle>
           <CardDescription>
             {done
-              ? 'Verified — an admin will review your account.'
+              ? t('auth.registerVerified')
               : challengeId
-                ? 'Enter the 6-digit code sent to your email.'
-                : 'Register with email. Access starts after admin approval.'}
+                ? t('auth.registerEnterOtp')
+                : t('auth.registerSubtitle')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {done ? (
             <Button asChild className="w-full">
-              <Link to="/login">Back to sign in</Link>
+              <Link to="/login">{t('auth.backToSignIn')}</Link>
             </Button>
           ) : challengeId ? (
             <>
-              <Field label="Verification code" htmlFor="otp">
+              <Field label={t('auth.verificationCode')} htmlFor="otp">
                 <Input
                   id="otp"
                   inputMode="numeric"
                   maxLength={6}
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 />
               </Field>
               {err && <p className="text-sm text-destructive">{err}</p>}
               <Button className="w-full" onClick={onVerify} disabled={verify.isPending || otp.length !== 6}>
                 {verify.isPending && <Spinner className="me-2" />}
-                Verify
+                {t('auth.verify')}
               </Button>
             </>
           ) : (
             <form onSubmit={onSignup} className="space-y-4" noValidate>
-              <Field label="Full name" htmlFor="fullName" error={errors.fullName?.message}>
-                <Input id="fullName" {...register('fullName')} />
+              <Field label={t('auth.fullName')} htmlFor="fullName" error={errors.fullName?.message}>
+                <Input id="fullName" autoComplete="name" {...register('fullName')} />
               </Field>
-              <Field label="Username" htmlFor="username" error={errors.username?.message}>
+              <Field label={t('auth.username')} htmlFor="username" error={errors.username?.message}>
                 <Input id="username" autoComplete="username" {...register('username')} />
               </Field>
-              <Field label="Email" htmlFor="email" error={errors.email?.message}>
-                <Input id="email" type="email" {...register('email')} />
+              <Field label={t('auth.email')} htmlFor="email" error={errors.email?.message}>
+                <Input id="email" type="email" autoComplete="email" {...register('email')} />
               </Field>
-              <Field label="Password" htmlFor="password" error={errors.password?.message}>
+              <Field label={t('auth.mobile')} htmlFor="phone" error={errors.phone?.message}>
+                <Input
+                  id="phone"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  maxLength={10}
+                  placeholder="9876543210"
+                  {...register('phone', {
+                    setValueAs: (v) => String(v ?? '').replace(/\D/g, '').slice(0, 10),
+                  })}
+                />
+              </Field>
+              <p className="text-xs text-muted-foreground">{t('auth.mobileHint')}</p>
+              <Field label={t('auth.password')} htmlFor="password" error={errors.password?.message}>
                 <Input
                   id="password"
                   type="password"
@@ -127,21 +151,18 @@ export function SignupPage() {
                   {...register('password')}
                 />
               </Field>
-              <p className="text-xs text-muted-foreground">
-                Password must be at least 8 characters and include an uppercase letter, a lowercase
-                letter, and a digit (e.g. Secret123).
-              </p>
+              <p className="text-xs text-muted-foreground">{t('auth.passwordHint')}</p>
               {err && <p className="text-sm text-destructive">{err}</p>}
               <Button type="submit" className="w-full" disabled={signup.isPending}>
                 {signup.isPending && <Spinner className="me-2" />}
-                Create account
+                {t('auth.register')}
               </Button>
             </form>
           )}
           <p className="text-center text-sm text-muted-foreground">
-            Already have an account?{' '}
+            {t('auth.alreadyHaveAccount')}{' '}
             <Link className="text-primary underline-offset-4 hover:underline" to="/login">
-              Sign in
+              {t('auth.login')}
             </Link>
           </p>
         </CardContent>
