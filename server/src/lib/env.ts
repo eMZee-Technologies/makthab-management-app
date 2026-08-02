@@ -89,6 +89,10 @@ export const env = {
   loginLockoutMinutes: Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15),
   // Default role assigned on self-signup (admin may override on approve).
   signupDefaultRole: process.env.SIGNUP_DEFAULT_ROLE ?? "Teacher",
+  // Object storage: "local" (data/files) or "s3" (Fargate / AWS).
+  fileStorage: (process.env.FILE_STORAGE ?? "local").toLowerCase() === "s3" ? "s3" : "local",
+  s3FilesBucket: process.env.S3_FILES_BUCKET || undefined,
+  awsRegion: process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "us-east-1",
 };
 
 export const isProd = env.nodeEnv === "production";

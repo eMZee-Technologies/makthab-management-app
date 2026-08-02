@@ -106,3 +106,16 @@ Desktop.ini
 # Keep shared project config (.claude/settings.json, agents, skills);
 # ignore per-user local overrides.
 .claude/settings.local.json
+
+# --- Terraform -------------------------------------------------------------
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/crash.log
+**/override.tf
+**/override.tf.json
+**/*_override.tf
+**/*_override.tf.json
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl

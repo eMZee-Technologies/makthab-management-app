@@ -1,0 +1,102 @@
+name: Deploy staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: makthab-staging
+  ECS_CLUSTER: makthab-staging
+  ECS_SERVICE: makthab-staging-api
+  ECS_TASK_FAMILY: makthab-staging-api
+  CLIENT_BUCKET: makthab-staging-client
+  CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.STAGING_CLOUDFRONT_DISTRIBUTION_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push API image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          VITE_API_URL: ${{ secrets.STAGING_VITE_API_URL }}
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}"
+          docker build \
+            --build-arg "VITE_API_URL=${VITE_API_URL}" \
+            -t "${IMAGE}:${IMAGE_TAG}" \
+            -t "${IMAGE}:latest" \
+            -f Dockerfile .
+          docker push "${IMAGE}:${IMAGE_TAG}"
+          docker push "${IMAGE}:latest"
+          echo "IMAGE_URI=${IMAGE}:${IMAGE_TAG}" >> "$GITHUB_ENV"
+
+      - name: Build client
+        env:
+          VITE_API_URL: ${{ secrets.STAGING_VITE_API_URL }}
+        run: |
+          npm ci
+          npm run build:shared
+          npm run build -w client
+
+      - name: Sync client to S3 + invalidate CloudFront
+        run: |
+          aws s3 sync client/dist "s3://${CLIENT_BUCKET}" --delete
+          if [ -n "${CLOUDFRONT_DISTRIBUTION_ID}" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
+              --paths "/*"
+          fi
+
+      - name: Render new task definition with image URI
+        id: taskdef
+        run: |
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition "${ECS_TASK_FAMILY}" \
+            --query 'taskDefinition' \
+            --output json)
+          echo "$TASK_DEF" \
+            | jq --arg IMAGE "$IMAGE_URI" '
+                .containerDefinitions[0].image = $IMAGE
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy)
+              ' > /tmp/taskdef.json
+          NEW_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/taskdef.json \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "task_definition_arn=${NEW_ARN}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy ECS service
+        run: |
+          aws ecs update-service \
+            --cluster "${ECS_CLUSTER}" \
+            --service "${ECS_SERVICE}" \
+            --task-definition "${{ steps.taskdef.outputs.task_definition_arn }}" \
+            --force-new-deployment \
+            --query 'service.serviceName' \
+            --output text
