@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import {
@@ -23,7 +22,7 @@ import { requireAuth, requireRole, requirePermission } from "../middleware/auth"
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextVoucherNo } from "../lib/docNo";
-import { FILES_DIR } from "../lib/paths";
+import { resolveUnderFilesDir } from "../lib/paths";
 import { uploadStaffPhoto, uploadStaffSignature, photoContentType } from "../lib/upload";
 
 // ---- Expenses (Admin, Accountant) ------------------------------------------
@@ -217,7 +216,11 @@ staffRouter.post(
 
     // Remove the previous photo file so we don't leave orphans on disk.
     if (existing.photoPath) {
-      await fs.promises.rm(path.join(FILES_DIR, existing.photoPath), { force: true });
+      try {
+        await fs.promises.rm(resolveUnderFilesDir(existing.photoPath), { force: true });
+      } catch {
+        /* ignore invalid stored paths */
+      }
     }
 
     const photoPath = `photos/${req.file.filename}`;
@@ -235,7 +238,12 @@ staffRouter.get(
     if (!staff) throw new AppError(404, "not_found", "Staff not found");
     if (!staff.photoPath) throw new AppError(404, "not_found", "Staff has no photo");
 
-    const abs = path.join(FILES_DIR, staff.photoPath);
+    let abs: string;
+    try {
+      abs = resolveUnderFilesDir(staff.photoPath);
+    } catch {
+      throw new AppError(404, "not_found", "Photo file missing");
+    }
     if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Photo file missing");
 
     res.setHeader("Content-Type", photoContentType(abs));
@@ -262,7 +270,11 @@ staffRouter.post(
     }
 
     if (existing.signaturePath) {
-      await fs.promises.rm(path.join(FILES_DIR, existing.signaturePath), { force: true });
+      try {
+        await fs.promises.rm(resolveUnderFilesDir(existing.signaturePath), { force: true });
+      } catch {
+        /* ignore */
+      }
     }
 
     const signaturePath = `photos/${req.file.filename}`;
@@ -280,7 +292,12 @@ staffRouter.get(
     if (!staff) throw new AppError(404, "not_found", "Staff not found");
     if (!staff.signaturePath) throw new AppError(404, "not_found", "Staff has no signature");
 
-    const abs = path.join(FILES_DIR, staff.signaturePath);
+    let abs: string;
+    try {
+      abs = resolveUnderFilesDir(staff.signaturePath);
+    } catch {
+      throw new AppError(404, "not_found", "Signature file missing");
+    }
     if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Signature file missing");
 
     res.setHeader("Content-Type", "image/jpeg");

@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { Router } from "express";
 import {
   studentCreateSchema,
@@ -14,7 +13,7 @@ import { requireAuth, requirePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { renderPdf } from "../lib/pdf";
 import { getOrgHeader } from "../lib/orgProfile";
-import { FILES_DIR } from "../lib/paths";
+import { resolveUnderFilesDir } from "../lib/paths";
 import { uploadStudentPhoto, photoContentType } from "../lib/upload";
 
 export const studentsRouter = Router();
@@ -73,7 +72,7 @@ studentsRouter.post(
       classId: dto.classId,
       categoryId: dto.categoryId ?? null,
       academicYearId: dto.academicYearId,
-      photoPath: dto.photoPath ?? null,
+      photoPath: null,
       notes: dto.notes ?? null,
       status: dto.status ?? "active",
     });
@@ -201,7 +200,11 @@ studentsRouter.post(
 
     // Remove the previous photo file so we don't leave orphans on disk.
     if (existing.photoPath) {
-      await fs.promises.rm(path.join(FILES_DIR, existing.photoPath), { force: true });
+      try {
+        await fs.promises.rm(resolveUnderFilesDir(existing.photoPath), { force: true });
+      } catch {
+        /* ignore invalid stored paths */
+      }
     }
 
     const photoPath = `photos/${req.file.filename}`;
@@ -219,7 +222,12 @@ studentsRouter.get(
     if (!student) throw new AppError(404, "not_found", "Student not found");
     if (!student.photoPath) throw new AppError(404, "not_found", "Student has no photo");
 
-    const abs = path.join(FILES_DIR, student.photoPath);
+    let abs: string;
+    try {
+      abs = resolveUnderFilesDir(student.photoPath);
+    } catch {
+      throw new AppError(404, "not_found", "Photo file missing");
+    }
     if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Photo file missing");
 
     res.setHeader("Content-Type", photoContentType(abs));

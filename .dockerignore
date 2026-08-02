@@ -1,0 +1,34 @@
+# Keep build context small and avoid leaking secrets / PII into image layers.
+.git
+.github
+.gitignore
+**/.env
+**/.env.*
+!**/.env*.example
+!**/.env*.sample
+
+node_modules
+**/node_modules
+client/dist
+server/dist
+packages/shared/dist
+coverage
+**/*.db
+**/*.db-*
+data/madrasa.db
+data/*.db*
+data/files/**
+!data/files/**/
+!data/files/**/.gitkeep
+data/backups/
+data/output/
+
+# Student / fee / salary PII — never bake into the image. Mount at runtime if
+# RUN_XLSX_IMPORT=true is needed.
+docs/source-data/
+
+*.md
+!README.md
+.cursor
+.codegraph
+Makthab.code-workspace

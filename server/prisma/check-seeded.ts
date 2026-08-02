@@ -2,9 +2,12 @@ import "dotenv/config";
 
 // Standalone CLI script (run via `tsx prisma/check-seeded.ts`), mirroring
 // seed.ts's own provider-resolution pattern. Used by the Docker entrypoint
-// as an idempotence guard: seed.ts always upserts OrgProfile id=1 first, so
-// its presence is a reliable "has this database been seeded at least once"
-// marker without needing a dedicated table.
+// as an idempotence guard.
+//
+// Marker: any User row exists. Unlike OrgProfile#1, users are not routinely
+// deleted by normal org-profile management, so deleting/replacing the
+// letterhead cannot re-trigger seed (which would otherwise risk resetting
+// bootstrap accounts if passwords were ever overwritten).
 //
 // Exit code 0  => already seeded (caller should skip migrate:xlsx + db:seed)
 // Exit code 1  => not seeded yet (caller should run them)
@@ -24,12 +27,12 @@ main()
   });
 
 async function main() {
-  const org = await prisma.orgProfile.findUnique({ where: { id: 1 } });
-  if (org) {
-    console.log("check-seeded: OrgProfile#1 exists — database already seeded.");
+  const userCount = await prisma.user.count();
+  if (userCount > 0) {
+    console.log(`check-seeded: ${userCount} user(s) exist — database already seeded.`);
     process.exitCode = 0;
   } else {
-    console.log("check-seeded: OrgProfile#1 not found — database not seeded yet.");
+    console.log("check-seeded: no users found — database not seeded yet.");
     process.exitCode = 1;
   }
 }

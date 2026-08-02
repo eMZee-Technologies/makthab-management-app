@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { Router } from "express";
 import {
   orgProfileCreateSchema,
@@ -14,7 +13,7 @@ import { validateBody, validateQuery } from "../middleware/validate";
 import { requireAuth, requirePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { uploadOrgImage, photoContentType } from "../lib/upload";
-import { FILES_DIR } from "../lib/paths";
+import { resolveUnderFilesDir } from "../lib/paths";
 
 // Institution profiles (letterhead). The single active row is what renders in
 // the app header and on generated PDF/XLSX reports. Reads of the active profile
@@ -100,7 +99,11 @@ orgProfileRouter.delete(
       throw new AppError(400, "active_profile", "Cannot delete the active profile; activate another first");
     }
     if (existing.headerImagePath) {
-      await fs.promises.rm(path.join(FILES_DIR, existing.headerImagePath), { force: true }).catch(() => {});
+      try {
+        await fs.promises.rm(resolveUnderFilesDir(existing.headerImagePath), { force: true });
+      } catch {
+        /* ignore */
+      }
     }
     await orgProfileRepository.delete(id);
     res.json({ data: { id } });
@@ -123,7 +126,11 @@ orgProfileRouter.post(
       throw new AppError(404, "not_found", "Organisation profile not found");
     }
     if (existing.headerImagePath) {
-      await fs.promises.rm(path.join(FILES_DIR, existing.headerImagePath), { force: true });
+      try {
+        await fs.promises.rm(resolveUnderFilesDir(existing.headerImagePath), { force: true });
+      } catch {
+        /* ignore */
+      }
     }
     const headerImagePath = `photos/${req.file.filename}`;
     const row = await orgProfileRepository.updateImage(id, headerImagePath);
@@ -141,7 +148,12 @@ orgProfileRouter.get(
     if (!row) throw new AppError(404, "not_found", "Organisation profile not found");
     if (!row.headerImagePath) throw new AppError(404, "not_found", "Profile has no image");
 
-    const abs = path.join(FILES_DIR, row.headerImagePath);
+    let abs: string;
+    try {
+      abs = resolveUnderFilesDir(row.headerImagePath);
+    } catch {
+      throw new AppError(404, "not_found", "Image file missing");
+    }
     if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Image file missing");
 
     res.setHeader("Content-Type", photoContentType(abs));
