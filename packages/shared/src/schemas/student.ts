@@ -19,7 +19,9 @@ export const studentCreateSchema = z.object({
   classId: z.number().int().positive(),
   categoryId: z.number().int().positive().nullable().optional(),
   academicYearId: z.number().int().positive(),
-  photoPath: z.string().optional().nullable(),
+  // photoPath is intentionally omitted from create/update input — photos are
+  // only set via POST /students/:id/photo so clients cannot inject path
+  // traversal strings into the stored file path.
   notes: z.string().optional().nullable(),
   status: studentStatusSchema.optional(),
 });

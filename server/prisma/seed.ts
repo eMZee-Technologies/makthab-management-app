@@ -10,6 +10,42 @@ const { PrismaClient } =
   provider === "postgresql" ? require("./generated/postgres-client") : require("./generated/sqlite-client");
 const prisma = new PrismaClient();
 
+const isProd = (process.env.NODE_ENV ?? "development") === "production";
+
+/**
+ * Resolve a bootstrap login password.
+ * - development: falls back to the documented default when env is unset
+ * - production required=true: env must be set, ≥12 chars, not the dev default
+ * - production required=false: returns null when unset (skip creating that user)
+ */
+function seedPassword(
+  envName: string,
+  devDefault: string,
+  opts: { required: boolean } = { required: true }
+): string | null {
+  const fromEnv = process.env[envName];
+  if (fromEnv !== undefined && fromEnv !== "") {
+    if (isProd && fromEnv === devDefault) {
+      throw new Error(
+        `${envName} must not equal the development default ("${devDefault}") in production`
+      );
+    }
+    if (isProd && fromEnv.length < 12) {
+      throw new Error(`${envName} must be at least 12 characters in production`);
+    }
+    return fromEnv;
+  }
+  if (isProd) {
+    if (opts.required) {
+      throw new Error(
+        `Missing ${envName}: required when seeding with NODE_ENV=production (do not use development defaults)`
+      );
+    }
+    return null;
+  }
+  return devDefault;
+}
+
 async function main() {
   // --- Org profile (letterhead printed on every PDF/XLSX report) ---
   await prisma.orgProfile.upsert({
@@ -48,15 +84,19 @@ async function main() {
     { name: "Accountant", permissions: ["fees.manage", "finance.manage", "reports.access"] },
     { name: "Teacher", permissions: ["attendance.mark"] },
   ];
-  for (const r of systemRoles) {
+  for (const role of systemRoles) {
     await prisma.role.upsert({
-      where: { name: r.name },
-      update: { permissions: JSON.stringify(r.permissions), isSystem: true },
-      create: { name: r.name, permissions: JSON.stringify(r.permissions), isSystem: true },
+      where: { name: role.name },
+      update: { permissions: JSON.stringify(role.permissions), isSystem: true },
+      create: {
+        name: role.name,
+        permissions: JSON.stringify(role.permissions),
+        isSystem: true,
+      },
     });
   }
 
-  // --- Academic years (BUILD_CONTRACT §5) ---
+  // --- Academic years + classes + expense categories (reference data) ---
   const years = [
     { name: "2024-2025", startDate: new Date("2024-06-01"), endDate: new Date("2025-05-31"), isActive: false },
     { name: "2025-2026", startDate: new Date("2025-06-01"), endDate: new Date("2026-05-31"), isActive: true },
@@ -69,9 +109,7 @@ async function main() {
     });
   }
 
-  // --- Classes: Madrasa curriculum stages ---
-  const classNames = ["Qaida", "Nazira", "Hifz"];
-  for (const name of classNames) {
+  for (const name of ["Nazira", "Hifz", "Aalim"]) {
     await prisma.class.upsert({
       where: { name },
       update: {},
@@ -79,20 +117,14 @@ async function main() {
     });
   }
 
-  // --- Expense categories (from MAKTAB study: common operational buckets) ---
-  const categories = [
-    "Salary",
-    "Rent",
+  for (const name of [
     "Utilities",
-    "Stationery",
-    "Books",
-    "Uniform",
     "Maintenance",
+    "Supplies",
     "Food",
     "Transport",
     "Miscellaneous",
-  ];
-  for (const name of categories) {
+  ]) {
     await prisma.expenseCategory.upsert({
       where: { name },
       update: {},
@@ -115,10 +147,14 @@ async function main() {
     },
   });
 
-  const adminHash = await bcrypt.hash("admin123", 12);
+  const adminPassword = seedPassword("SEED_ADMIN_PASSWORD", "admin123", { required: true })!;
+  const adminHash = await bcrypt.hash(adminPassword, 12);
+  // Never overwrite passwordHash on update — re-running seed (or a mistaken
+  // FORCE_RESEED) must not reset a rotated production password back to a
+  // known value.
   await prisma.user.upsert({
     where: { username: "admin" },
-    update: { passwordHash: adminHash, email: "admin@makthab.local", role: "Admin", staffId: adminStaff.id },
+    update: { email: "admin@makthab.local", role: "Admin", staffId: adminStaff.id },
     create: {
       username: "admin",
       passwordHash: adminHash,
@@ -142,18 +178,26 @@ async function main() {
       status: "active",
     },
   });
-  const accountantHash = await bcrypt.hash("accountant123", 12);
-  await prisma.user.upsert({
-    where: { username: "accountant" },
-    update: { passwordHash: accountantHash, email: "accountant@makthab.local", role: "Accountant", staffId: accountantStaff.id },
-    create: {
-      username: "accountant",
-      passwordHash: accountantHash,
-      email: "accountant@makthab.local",
-      role: "Accountant",
-      staffId: accountantStaff.id,
-    },
+  // Accountant / Teacher logins are always created in development (fixed
+  // passwords for the Jest role-guard suite). In production they are only
+  // created when the matching SEED_*_PASSWORD is explicitly provided.
+  const accountantPassword = seedPassword("SEED_ACCOUNTANT_PASSWORD", "accountant123", {
+    required: false,
   });
+  if (accountantPassword) {
+    const accountantHash = await bcrypt.hash(accountantPassword, 12);
+    await prisma.user.upsert({
+      where: { username: "accountant" },
+      update: { email: "accountant@makthab.local", role: "Accountant", staffId: accountantStaff.id },
+      create: {
+        username: "accountant",
+        passwordHash: accountantHash,
+        email: "accountant@makthab.local",
+        role: "Accountant",
+        staffId: accountantStaff.id,
+      },
+    });
+  }
 
   // --- Teacher Staff + User, assigned to Class "Nazira" (for "own classes only" tests) ---
   const teacherStaff = await prisma.staff.upsert({
@@ -169,18 +213,21 @@ async function main() {
       status: "active",
     },
   });
-  const teacherHash = await bcrypt.hash("teacher123", 12);
-  await prisma.user.upsert({
-    where: { username: "teacher" },
-    update: { passwordHash: teacherHash, email: "teacher@makthab.local", role: "Teacher", staffId: teacherStaff.id },
-    create: {
-      username: "teacher",
-      passwordHash: teacherHash,
-      email: "teacher@makthab.local",
-      role: "Teacher",
-      staffId: teacherStaff.id,
-    },
-  });
+  const teacherPassword = seedPassword("SEED_TEACHER_PASSWORD", "teacher123", { required: false });
+  if (teacherPassword) {
+    const teacherHash = await bcrypt.hash(teacherPassword, 12);
+    await prisma.user.upsert({
+      where: { username: "teacher" },
+      update: { email: "teacher@makthab.local", role: "Teacher", staffId: teacherStaff.id },
+      create: {
+        username: "teacher",
+        passwordHash: teacherHash,
+        email: "teacher@makthab.local",
+        role: "Teacher",
+        staffId: teacherStaff.id,
+      },
+    });
+  }
   // Assign the teacher to Class "Nazira" so attendance access-control can be exercised.
   await prisma.class.update({
     where: { name: "Nazira" },
@@ -190,15 +237,17 @@ async function main() {
   // Postgres SERIAL sequences aren't advanced by explicit-id inserts (unlike
   // SQLite's rowid tracking), so later auto-generated inserts would collide
   // with the hardcoded ids above (e.g. Staff id 1/2/3) unless resynced here.
+  // Table names are fixed literals (not user input) — use tagged $executeRaw.
   if (provider === "postgresql") {
-    for (const table of ["OrgProfile", "Staff"]) {
-      await prisma.$executeRawUnsafe(
-        `SELECT setval(pg_get_serial_sequence('"${table}"', 'id'), (SELECT COALESCE(MAX(id), 1) FROM "${table}"))`,
-      );
-    }
+    await prisma.$executeRaw`SELECT setval(pg_get_serial_sequence('"OrgProfile"', 'id'), (SELECT COALESCE(MAX(id), 1) FROM "OrgProfile"))`;
+    await prisma.$executeRaw`SELECT setval(pg_get_serial_sequence('"Staff"', 'id'), (SELECT COALESCE(MAX(id), 1) FROM "Staff"))`;
   }
 
-  console.log("Seed complete. Logins: admin/admin123, accountant/accountant123, teacher/teacher123");
+  if (isProd) {
+    console.log("Seed complete. Bootstrap users created/ensured (passwords taken from SEED_*_PASSWORD env; existing hashes not overwritten).");
+  } else {
+    console.log("Seed complete. Logins: admin/admin123, accountant/accountant123, teacher/teacher123");
+  }
 }
 
 main()

@@ -19,12 +19,52 @@ function databaseProvider(): DatabaseProvider {
   return v as DatabaseProvider;
 }
 
+/** Well-known placeholders from .env.example — never acceptable in production. */
+export const INSECURE_JWT_DEFAULTS = new Set([
+  "dev-access-secret-change-me",
+  "dev-refresh-secret-change-me",
+]);
+
+/**
+ * Resolve a JWT signing secret. In production the var must be set explicitly
+ * and must not equal the documented development placeholders — otherwise any
+ * reader of .env.example can forge tokens.
+ */
+export function resolveJwtSecret(
+  name: "JWT_SECRET" | "JWT_REFRESH_SECRET",
+  value: string | undefined,
+  nodeEnv: string,
+  devFallback: string
+): string {
+  const isProd = nodeEnv === "production";
+  if (isProd) {
+    if (value === undefined || value === "") {
+      throw new Error(`Missing required env var: ${name} (must be set in production)`);
+    }
+    if (INSECURE_JWT_DEFAULTS.has(value)) {
+      throw new Error(
+        `${name} is set to a documented development default; refuse to start in production`
+      );
+    }
+    return value;
+  }
+  if (value !== undefined && value !== "") return value;
+  return devFallback;
+}
+
+const nodeEnv = process.env.NODE_ENV ?? "development";
+
 export const env = {
-  nodeEnv: process.env.NODE_ENV ?? "development",
+  nodeEnv,
   port: Number(process.env.PORT ?? 3000),
   clientOrigin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
-  jwtSecret: required("JWT_SECRET", "dev-access-secret-change-me"),
-  jwtRefreshSecret: required("JWT_REFRESH_SECRET", "dev-refresh-secret-change-me"),
+  jwtSecret: resolveJwtSecret("JWT_SECRET", process.env.JWT_SECRET, nodeEnv, "dev-access-secret-change-me"),
+  jwtRefreshSecret: resolveJwtSecret(
+    "JWT_REFRESH_SECRET",
+    process.env.JWT_REFRESH_SECRET,
+    nodeEnv,
+    "dev-refresh-secret-change-me"
+  ),
   jwtAccessTtl: process.env.JWT_ACCESS_TTL ?? "15m",
   jwtRefreshTtl: process.env.JWT_REFRESH_TTL ?? "7d",
   // "walink" (default): client-side wa.me click-to-chat, text-only, no

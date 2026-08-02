@@ -9,16 +9,22 @@
 # containerized Dockerfile.txt entrypoint end-to-end locally — the same
 # migrate/seed-gate/healthcheck flow used in production — before pushing a
 # deploy. Run it with: docker compose --profile full up --build
+#
+# For the full profile you MUST supply strong secrets (see environment below).
+# Copy docker-compose.override.example.yml or export:
+#   JWT_SECRET, JWT_REFRESH_SECRET, SEED_ADMIN_PASSWORD, …
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # Override in production / shared hosts: POSTGRES_PASSWORD from env / secrets.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: makthab_dev
     ports:
-      - "5433:5432" # 5433 to avoid clashing with a host-installed Postgres on 5432
+      # Bind to loopback only — do not publish Postgres on all interfaces.
+      - "127.0.0.1:5433:5432"
     volumes:
       - makthab_pg_data:/var/lib/postgresql/data
     healthcheck:
@@ -40,12 +46,25 @@ services:
         condition: service_healthy
     environment:
       DATABASE_PROVIDER: postgresql
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/makthab_dev
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/makthab_dev
       NODE_ENV: production
-      # FORCE_RESEED: "true"   # uncomment to force-rerun xlsx import + seed
-      # SKIP_SEED: "true"      # uncomment to skip xlsx import + seed entirely
+      CLIENT_ORIGIN: http://localhost:3000
+      # Required in production — compose will fail to start the app without these.
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a long random string}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET to a long random string}
+      # Required on first boot seed (NODE_ENV=production). Existing user hashes are never overwritten.
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?Set SEED_ADMIN_PASSWORD (min 12 chars, not the dev default)}
+      # Optional secondary bootstrap accounts (same rules as admin when set):
+      SEED_ACCOUNTANT_PASSWORD: ${SEED_ACCOUNTANT_PASSWORD:-}
+      SEED_TEACHER_PASSWORD: ${SEED_TEACHER_PASSWORD:-}
+      # SKIP_SEED: "true"
+      # FORCE_RESEED: "true"   # re-runs seed metadata only; does not reset passwords
+      # RUN_XLSX_IMPORT: "true"  # requires mounting the xlsx (not in the image)
+    # Optional: mount legacy spreadsheet for one-shot import
+    # volumes:
+    #   - ./docs/source-data:/app/docs/source-data:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
 volumes:
   makthab_pg_data:

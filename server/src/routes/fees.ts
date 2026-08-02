@@ -23,7 +23,7 @@ import { getOrgHeader } from "../lib/orgProfile";
 import { MONTH_NAMES, MONTH_ABBR } from "../lib/monthNames";
 import { buildWhatsAppLink, sendWhatsAppDocumentViaBusinessApi } from "../lib/whatsapp";
 import { env } from "../lib/env";
-import { RECEIPTS_DIR, FILES_DIR, ensureDir } from "../lib/paths";
+import { RECEIPTS_DIR, ensureDir, resolveUnderFilesDir } from "../lib/paths";
 
 export const feesRouter = Router();
 
@@ -39,7 +39,12 @@ async function loadFee(id: number) {
 // upload.ts) so parseJpegInfo always applies here.
 function loadSignatureImage(signaturePath: string | null): EmbeddedImage | undefined {
   if (!signaturePath) return undefined;
-  const abs = path.join(FILES_DIR, signaturePath);
+  let abs: string;
+  try {
+    abs = resolveUnderFilesDir(signaturePath);
+  } catch {
+    return undefined;
+  }
   if (!fs.existsSync(abs)) return undefined;
   const bytes = fs.readFileSync(abs);
   try {
