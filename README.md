@@ -78,10 +78,15 @@ You can set these in `server/.env`, or pass them inline with `cross-env`.
 ### 3. Migrate and seed
 
 ```bash
-npm run db:reset:pg -w server   # migrate + seed the Postgres database
+# Apply pending migrations only (keeps existing data):
+npm run db:deploy:pg -w server
+
+# OR wipe + migrate + seed (fresh DB):
+npm run db:reset:pg -w server
 ```
-This creates a fresh PostgreSQL migration history (separate from the SQLite
-one under `server/prisma/sqlite/migrations/`).
+
+`db:deploy` / `db:deploy:pg` use the **Postgres** schema at `server/prisma/schema.prisma`.
+Do **not** use the SQLite migrate path when `DATABASE_PROVIDER=postgresql`.
 
 ### 4. Run the app with Postgres
 
@@ -134,6 +139,9 @@ npm run db:reset       # reset + migrate + seed (SQLite — default)
 | `npm run test:pg -w server` | Jest against Postgres | PostgreSQL |
 | `npm run migrate:xlsx -w server` | Import legacy Excel data | SQLite |
 | `npm run migrate:xlsx:pg -w server` | Import into Postgres | PostgreSQL |
+| `npm run db:deploy -w server` | Apply pending migrations (reads `server/.env`) | from `.env` |
+| `npm run db:deploy:pg -w server` | Apply pending **Postgres** migrations | PostgreSQL |
+| `npm run db:deploy:sqlite -w server` | Apply pending **SQLite** migrations | SQLite |
 | `npm run db:reset:pg -w server` | Reset + migrate + seed Postgres | PostgreSQL |
 | `npm run db:seed:pg -w server` | Seed Postgres only | PostgreSQL |
 

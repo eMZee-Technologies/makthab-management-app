@@ -173,21 +173,31 @@ That means either:
 2. `server/.env` has a **mismatch** — e.g. `DATABASE_PROVIDER=sqlite` with a `postgresql://…` URL
    (or the reverse).
 
-**Fix `server/.env` to one consistent pair**, then deploy:
+**Fix `server/.env` (must be this file, not a root `.env`)** for Docker Compose:
 
 ```env
-# Option A — SQLite (simple local)
-DATABASE_PROVIDER=sqlite
-DATABASE_URL="file:../../../data/madrasa.db"
-
-# Option B — PostgreSQL (matches postgres-client stack traces)
 DATABASE_PROVIDER=postgresql
-DATABASE_URL="postgresql://USER:PASS@localhost:5432/makthab"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev"
 ```
 
-```bash
-npm run db:deploy -w server
-# restart npm run dev afterward
+Note the host port is **5433** (see `docker-compose.yml`), not 5432.
+
+Then use the **Postgres-specific** migrate command (avoids the sqlite schema entirely):
+
+```powershell
+git pull
+docker compose up -d
+npm run db:deploy:pg -w server
+# first time / empty DB, also seed:
+npm run db:seed:pg -w server
+npm run dev
+```
+
+Equivalent explicit command:
+
+```powershell
+cd server
+npx cross-env DATABASE_PROVIDER=postgresql DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev" prisma migrate deploy --schema=./prisma/schema.prisma
 ```
 
 ## Branch & PR checklist
