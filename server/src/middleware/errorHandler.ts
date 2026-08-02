@@ -40,11 +40,22 @@ export const errorHandler = (
 ) => {
   if (isZodError(err)) {
     // 400 per the QA contract (BUILD_CONTRACT §7 test suite).
+    // Prefer a concrete first field message in `message` so UIs that only
+    // render error.message (and operators grepping logs) see what to fix;
+    // full flatten stays in `details`.
+    const flat = err.flatten();
+    const fieldMsgs = Object.entries(flat.fieldErrors).flatMap(([field, msgs]) =>
+      (msgs ?? []).map((m) => `${field}: ${m}`)
+    );
+    const summary =
+      [...flat.formErrors, ...fieldMsgs].filter(Boolean).join(" · ") ||
+      "Request validation failed";
+    logger.debug(`validation_error: ${summary}`);
     return res.status(400).json({
       error: {
         code: "validation_error",
-        message: "Request validation failed",
-        details: err.flatten(),
+        message: summary,
+        details: flat,
       },
     });
   }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { strongPasswordSchema } from '@makthab/shared';
 import { GraduationCap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +10,7 @@ import { Field } from '@/components/form/Field';
 import { Spinner } from '@/components/ui/spinner';
 import { LocaleToggle } from '@/components/layout/LocaleToggle';
 import { useAuthStore } from '@/store/authStore';
-import { extractApiError } from '@/api/client';
+import { formatApiErrorMessage } from '@/api/client';
 import { useForgotPassword, useVerifyOtp, useResetPassword } from './api';
 
 type Step = 'identify' | 'otp' | 'reset' | 'done';
@@ -25,6 +26,7 @@ export function ForgotPasswordPage() {
   const [resetToken, setResetToken] = useState<string | null>(null);
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const { register, handleSubmit } = useForm<{ username: string }>({
     defaultValues: { username: '' },
@@ -33,9 +35,9 @@ export function ForgotPasswordPage() {
   if (isAuthed) return <Navigate to="/" replace />;
 
   const err =
-    (forgot.isError && extractApiError(forgot.error).message) ||
-    (verify.isError && extractApiError(verify.error).message) ||
-    (reset.isError && extractApiError(reset.error).message) ||
+    (forgot.isError && formatApiErrorMessage(forgot.error)) ||
+    (verify.isError && formatApiErrorMessage(verify.error)) ||
+    (reset.isError && formatApiErrorMessage(reset.error)) ||
     null;
 
   return (
@@ -64,8 +66,6 @@ export function ForgotPasswordPage() {
                   onSuccess: (data) => {
                     setChallengeId(data.challengeId);
                     if (data.devOtp) setOtp(data.devOtp);
-                    // Even when challengeId is null (unknown account), advance so
-                    // the UI does not leak whether the account exists.
                     setStep(data.challengeId ? 'otp' : 'done');
                   },
                 });
@@ -119,25 +119,36 @@ export function ForgotPasswordPage() {
 
           {step === 'reset' && resetToken && (
             <>
-              <Field label="New password" htmlFor="password">
+              <Field label="New password" htmlFor="password" error={passwordError ?? undefined}>
                 <Input
                   id="password"
                   type="password"
                   autoComplete="new-password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setPasswordError(null);
+                  }}
                 />
               </Field>
+              <p className="text-xs text-muted-foreground">
+                At least 8 characters, with uppercase, lowercase, and a digit (e.g. Secret123).
+              </p>
               {err && <p className="text-sm text-destructive">{err}</p>}
               <Button
                 className="w-full"
                 disabled={reset.isPending || password.length < 8}
-                onClick={() =>
+                onClick={() => {
+                  const parsed = strongPasswordSchema.safeParse(password);
+                  if (!parsed.success) {
+                    setPasswordError(parsed.error.issues[0]?.message ?? 'Invalid password');
+                    return;
+                  }
                   reset.mutate(
                     { resetToken, password },
                     { onSuccess: () => setStep('done') }
-                  )
-                }
+                  );
+                }}
               >
                 {reset.isPending && <Spinner className="me-2" />}
                 Update password

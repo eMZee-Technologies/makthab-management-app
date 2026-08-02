@@ -90,6 +90,35 @@ export function extractApiError(err: unknown): ApiErrorShape {
   return { message: 'Unexpected error' };
 }
 
+/**
+ * Human-readable API error. For Zod 400s the envelope is
+ * `{ error: { code: "validation_error", message: "Request validation failed", details: flatten() } }`
+ * — this surfaces field messages (e.g. "password: Password must include a digit")
+ * instead of the generic top-level message alone.
+ */
+export function formatApiErrorMessage(err: unknown): string {
+  const api = extractApiError(err);
+  const details = api.details;
+  if (details && typeof details === 'object') {
+    const flat = details as {
+      formErrors?: string[];
+      fieldErrors?: Record<string, string[] | undefined>;
+    };
+    const parts: string[] = [];
+    if (Array.isArray(flat.formErrors)) {
+      parts.push(...flat.formErrors.filter(Boolean));
+    }
+    if (flat.fieldErrors) {
+      for (const [field, msgs] of Object.entries(flat.fieldErrors)) {
+        if (!msgs?.length) continue;
+        for (const m of msgs) parts.push(`${field}: ${m}`);
+      }
+    }
+    if (parts.length > 0) return parts.join(' · ');
+  }
+  return api.message;
+}
+
 /** Unwrap the standard `{ data: ... }` success envelope. */
 export function unwrap<T>(payload: { data: T } | T): T {
   if (payload && typeof payload === 'object' && 'data' in (payload as Record<string, unknown>)) {

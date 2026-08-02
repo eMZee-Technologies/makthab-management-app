@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { strongPasswordSchema } from '@makthab/shared';
 import { GraduationCap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,15 +12,16 @@ import { Field } from '@/components/form/Field';
 import { Spinner } from '@/components/ui/spinner';
 import { LocaleToggle } from '@/components/layout/LocaleToggle';
 import { useAuthStore } from '@/store/authStore';
-import { extractApiError } from '@/api/client';
+import { formatApiErrorMessage } from '@/api/client';
 import { useSignup, useVerifyOtp } from './api';
 
-type SignupForm = {
-  fullName: string;
-  username: string;
-  password: string;
-  email: string;
-};
+const signupFormSchema = z.object({
+  fullName: z.string().trim().min(1, 'Full name is required'),
+  username: z.string().trim().min(3, 'Username must be at least 3 characters').max(64),
+  email: z.string().trim().email('Enter a valid email'),
+  password: strongPasswordSchema,
+});
+type SignupForm = z.infer<typeof signupFormSchema>;
 
 export function SignupPage() {
   const isAuthed = useAuthStore((s) => s.isAuthenticated());
@@ -32,6 +36,7 @@ export function SignupPage() {
     handleSubmit,
     formState: { errors },
   } = useForm<SignupForm>({
+    resolver: zodResolver(signupFormSchema),
     defaultValues: { fullName: '', username: '', password: '', email: '' },
   });
 
@@ -58,8 +63,8 @@ export function SignupPage() {
   };
 
   const err =
-    (signup.isError && extractApiError(signup.error).message) ||
-    (verify.isError && extractApiError(verify.error).message) ||
+    (signup.isError && formatApiErrorMessage(signup.error)) ||
+    (verify.isError && formatApiErrorMessage(verify.error)) ||
     null;
 
   return (
@@ -106,22 +111,26 @@ export function SignupPage() {
           ) : (
             <form onSubmit={onSignup} className="space-y-4" noValidate>
               <Field label="Full name" htmlFor="fullName" error={errors.fullName?.message}>
-                <Input id="fullName" {...register('fullName', { required: true })} />
+                <Input id="fullName" {...register('fullName')} />
               </Field>
               <Field label="Username" htmlFor="username" error={errors.username?.message}>
-                <Input id="username" autoComplete="username" {...register('username', { required: true, minLength: 3 })} />
+                <Input id="username" autoComplete="username" {...register('username')} />
               </Field>
               <Field label="Email" htmlFor="email" error={errors.email?.message}>
-                <Input id="email" type="email" {...register('email', { required: true })} />
+                <Input id="email" type="email" {...register('email')} />
               </Field>
               <Field label="Password" htmlFor="password" error={errors.password?.message}>
                 <Input
                   id="password"
                   type="password"
                   autoComplete="new-password"
-                  {...register('password', { required: true, minLength: 8 })}
+                  {...register('password')}
                 />
               </Field>
+              <p className="text-xs text-muted-foreground">
+                Password must be at least 8 characters and include an uppercase letter, a lowercase
+                letter, and a digit (e.g. Secret123).
+              </p>
               {err && <p className="text-sm text-destructive">{err}</p>}
               <Button type="submit" className="w-full" disabled={signup.isPending}>
                 {signup.isPending && <Spinner className="me-2" />}
