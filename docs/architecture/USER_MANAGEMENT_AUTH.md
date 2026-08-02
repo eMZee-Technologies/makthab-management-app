@@ -150,6 +150,44 @@ docs/architecture/USER_MANAGEMENT_AUTH.md  # this file
 - Signup analytics / abandonment metrics
 - CAPTCHA on signup when abuse appears
 
+## Applying migrations after pull (fixes `User.phone` does not exist)
+
+The Prisma client was regenerated with new `User` columns (`phone`, lockout,
+OTP timestamps, etc.). If you pull this branch but **do not deploy migrations**,
+login/signup fail with:
+
+```
+The column `User.phone` does not exist in the current database.
+```
+
+Your stack trace shows `postgres-client` → you are on **PostgreSQL**
+(`DATABASE_PROVIDER=postgresql`). Apply the Postgres migration, then restart:
+
+```bash
+# from repo root — uses DATABASE_PROVIDER from server/.env
+npm run db:deploy -w server
+
+# or explicitly:
+cd server
+npx prisma migrate deploy --schema=./prisma/schema.prisma
+npm run db:seed:pg   # optional if you wiped / need seed users
+```
+
+If you use **SQLite** instead (`DATABASE_PROVIDER=sqlite` or unset):
+
+```bash
+npm run db:deploy:sqlite -w server
+# or wipe + reseed:
+npm run db:reset -w server
+```
+
+Confirm columns exist (Postgres):
+
+```sql
+SELECT column_name FROM information_schema.columns
+WHERE table_name = 'User' AND column_name = 'phone';
+```
+
 ## Branch & PR checklist
 
 ```bash
@@ -160,8 +198,10 @@ git checkout -b cursor/user-management-admin-approval-0884   # cloud agent namin
 npm install
 npm run build:shared
 npm run db:generate -w server && npm run db:generate:sqlite -w server
-# SQLite local:
-cd server && npx prisma migrate deploy --schema=./prisma/sqlite/schema.prisma && npm run db:seed
+# Apply migrations for your active provider:
+npm run db:deploy -w server
+# SQLite local (alternative wipe):
+#   npm run db:reset -w server
 npm run typecheck
 cd server && DATABASE_URL="file:./test.db" npx prisma migrate reset --force --schema=./prisma/sqlite/schema.prisma
 cd server && DATABASE_URL="file:./test.db" npx jest tests/auth-lifecycle.test.ts --runInBand
