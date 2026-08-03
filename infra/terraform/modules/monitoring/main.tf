@@ -10,8 +10,8 @@ variable "alarm_email" {
 }
 
 locals {
-  name         = "${var.project}-${var.environment}"
-  has_email    = var.alarm_email != ""
+  name      = "${var.project}-${var.environment}"
+  has_email = var.alarm_email != ""
 }
 
 resource "aws_sns_topic" "alarms" {

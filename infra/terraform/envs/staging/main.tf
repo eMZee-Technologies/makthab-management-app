@@ -1,11 +1,11 @@
 module "networking" {
   source = "../../modules/networking"
 
-  project           = var.project
-  environment       = var.environment
-  vpc_cidr          = var.vpc_cidr
+  project            = var.project
+  environment        = var.environment
+  vpc_cidr           = var.vpc_cidr
   availability_zones = var.availability_zones
-  use_nat_gateway   = var.use_nat_gateway
+  use_nat_gateway    = var.use_nat_gateway
 }
 
 module "ecr" {
@@ -32,15 +32,15 @@ module "secrets" {
 module "database" {
   source = "../../modules/database"
 
-  project            = var.project
-  environment        = var.environment
-  vpc_id             = module.networking.vpc_id
-  private_subnet_ids = module.networking.private_subnet_ids
+  project               = var.project
+  environment           = var.environment
+  vpc_id                = module.networking.vpc_id
+  private_subnet_ids    = module.networking.private_subnet_ids
   ecs_security_group_id = module.networking.ecs_security_group_id
-  instance_class     = var.db_instance_class
-  db_name            = var.db_name
-  db_username        = var.db_username
-  db_password        = var.db_password
+  instance_class        = var.db_instance_class
+  db_name               = var.db_name
+  db_username           = var.db_username
+  db_password           = var.db_password
 }
 
 module "ecs" {
@@ -86,11 +86,11 @@ module "cdn" {
 module "monitoring" {
   source = "../../modules/monitoring"
 
-  project            = var.project
-  environment        = var.environment
-  alb_arn_suffix     = module.ecs.alb_arn_suffix
-  ecs_cluster_name   = module.ecs.cluster_name
-  ecs_service_name   = module.ecs.service_name
-  rds_instance_id    = module.database.instance_id
-  alarm_email        = var.alarm_email
+  project          = var.project
+  environment      = var.environment
+  alb_arn_suffix   = module.ecs.alb_arn_suffix
+  ecs_cluster_name = module.ecs.cluster_name
+  ecs_service_name = module.ecs.service_name
+  rds_instance_id  = module.database.instance_id
+  alarm_email      = var.alarm_email
 }

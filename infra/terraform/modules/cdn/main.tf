@@ -18,7 +18,7 @@ variable "client_domain" {
 }
 
 locals {
-  name             = "${var.project}-${var.environment}"
+  name              = "${var.project}-${var.environment}"
   has_custom_domain = var.client_domain != ""
 }
 
@@ -82,10 +82,10 @@ resource "aws_cloudfront_distribution" "client" {
 }
 
 resource "aws_acm_certificate" "client" {
-  count                     = local.has_custom_domain ? 1 : 0
-  provider                  = aws.us_east_1
-  domain_name               = var.client_domain
-  validation_method         = "DNS"
+  count             = local.has_custom_domain ? 1 : 0
+  provider          = aws.us_east_1
+  domain_name       = var.client_domain
+  validation_method = "DNS"
   lifecycle { create_before_destroy = true }
 }
 
