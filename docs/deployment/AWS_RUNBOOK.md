@@ -21,6 +21,16 @@ and [`infra/terraform/README.md`](../../infra/terraform/README.md).
 
 Never bake secrets into the Docker image or commit `.tfvars` with real passwords.
 
+## First production data load (xlsx → RDS)
+
+One-time import of `Maktab Detailed - Report.xlsx` into PostgreSQL:
+
+see **[docs/migration/PRODUCTION_XLSX_CUTOVER.md](../migration/PRODUCTION_XLSX_CUTOVER.md)**.
+
+Do not leave `RUN_XLSX_IMPORT=true` on the steady-state API service. Prefer a
+private-subnet one-off ECS task that downloads the file from a private S3
+bucket, runs `npm run migrate:xlsx:pg -w server`, then deletes the local copy.
+
 ## Smoke checklist (post-deploy / post-restore)
 
 Mirror `BUILD_CONTRACT.md` §7 against the live environment:

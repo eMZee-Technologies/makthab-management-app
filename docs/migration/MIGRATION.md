@@ -70,6 +70,17 @@ npm run db:reset -w server
 npm run migrate:xlsx -w server
 ```
 
+## Production (PostgreSQL) — secure one-time cutover
+
+Do **not** bake the workbook into the Docker image. For PRD RDS, follow the
+dedicated runbook:
+
+**[PRODUCTION_XLSX_CUTOVER.md](./PRODUCTION_XLSX_CUTOVER.md)**
+
+Summary: stage the xlsx in a private S3 bucket → run a **one-off** job
+(`migrate:xlsx:pg`) with Secrets Manager `DATABASE_URL` → reconcile row counts
+→ disable `RUN_XLSX_IMPORT` and delete/archive the source file.
+
 ## Mapping decisions
 
 - Synthetic receipt / voucher numbers guarantee uniqueness and idempotency.
