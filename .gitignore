@@ -106,3 +106,8 @@ Desktop.ini
 # Keep shared project config (.claude/settings.json, agents, skills);
 # ignore per-user local overrides.
 .claude/settings.local.json
+
+# --- Database backups -------------------------------------------------------
+# Produced by scripts/db/backup-postgres.ps1 — contains real student/finance
+# data, never commit.
+/backups/
