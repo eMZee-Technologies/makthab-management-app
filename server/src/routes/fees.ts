@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import { Router } from "express";
 import {
   feePaymentCreateSchema,
@@ -23,8 +21,8 @@ import { getOrgHeader } from "../lib/orgProfile";
 import { MONTH_NAMES, MONTH_ABBR } from "../lib/monthNames";
 import { buildWhatsAppLink, sendWhatsAppDocumentViaBusinessApi } from "../lib/whatsapp";
 import { env } from "../lib/env";
-import { RECEIPTS_DIR, ensureDir, resolveUnderFilesDir } from "../lib/paths";
-
+import { getStorage, readStoredFile, normalizeStoredKey } from "../lib/storage";
+import { logger } from "../lib/logger";
 export const feesRouter = Router();
 
 feesRouter.use(requireAuth, requirePermission("fees.manage"));
@@ -37,16 +35,10 @@ async function loadFee(id: number) {
 // Load the collecting staff member's uploaded signature (if any) as an
 // EmbeddedImage ready for the PDF writer. Signatures are JPEG-only (see
 // upload.ts) so parseJpegInfo always applies here.
-function loadSignatureImage(signaturePath: string | null): EmbeddedImage | undefined {
+async function loadSignatureImage(signaturePath: string | null): Promise<EmbeddedImage | undefined> {
   if (!signaturePath) return undefined;
-  let abs: string;
-  try {
-    abs = resolveUnderFilesDir(signaturePath);
-  } catch {
-    return undefined;
-  }
-  if (!fs.existsSync(abs)) return undefined;
-  const bytes = fs.readFileSync(abs);
+  const bytes = await readStoredFile(signaturePath);
+  if (!bytes) return undefined;
   try {
     const info = parseJpegInfo(bytes);
     return { bytes, width: info.width, height: info.height, numComponents: info.numComponents };
@@ -96,12 +88,41 @@ async function receiptPdf(fee: NonNullable<FeeWithStudent>): Promise<Buffer> {
     amountPaid: fee.amountPaid,
     signature: fee.collectedBy
       ? {
-        image: loadSignatureImage(fee.collectedBy.signaturePath),
+        image: await loadSignatureImage(fee.collectedBy.signaturePath),
         staffName: fee.collectedBy.fullName,
         staffRole: fee.collectedBy.role,
       }
       : undefined,
   });
+}
+
+async function saveReceiptPdf(receiptNo: string, pdf: Buffer): Promise<string> {
+  const key = `receipts/${receiptNo}.pdf`;
+  try {
+    await getStorage().save(key, pdf, { contentType: "application/pdf" });
+    return key;
+  } catch (err) {
+    logger.error(`failed to store receipt ${key}: ${(err as Error).message}`);
+    throw new AppError(500, "storage_error", "Failed to store receipt PDF");
+  }
+}
+
+async function loadReceiptPdf(fee: NonNullable<FeeWithStudent>): Promise<Buffer> {
+  if (fee.pdfPath) {
+    const stored = await readStoredFile(fee.pdfPath);
+    if (stored) return stored;
+  }
+  return receiptPdf(fee);
+}
+
+async function deleteReceiptPdf(pdfPath: string | null): Promise<void> {
+  if (!pdfPath) return;
+  try {
+    const key = normalizeStoredKey(pdfPath);
+    await getStorage().delete(key);
+  } catch (err) {
+    logger.debug(`receipt delete skipped for ${pdfPath}: ${(err as Error).message}`);
+  }
 }
 
 // POST /fees — record a payment and generate the receipt PDF.
@@ -133,8 +154,7 @@ feesRouter.post(
       collectedById: actorStaffId(req),
     });
 
-    const pdfPath = path.join(ensureDir(RECEIPTS_DIR), `${receiptNo}.pdf`);
-    fs.writeFileSync(pdfPath, await receiptPdf(created));
+    const pdfPath = await saveReceiptPdf(receiptNo, await receiptPdf(created));
     const fee = await feePaymentRepository.setPdfPath(created.id, pdfPath);
 
     res.status(201).json({ data: fee });
@@ -324,9 +344,7 @@ feesRouter.delete(
     if (!fee) throw new AppError(404, "not_found", "Payment not found");
 
     await feePaymentRepository.delete(id);
-    if (fee.pdfPath) {
-      await fs.promises.rm(fee.pdfPath, { force: true }).catch(() => { });
-    }
+    await deleteReceiptPdf(fee.pdfPath);
     res.json({ data: { id } });
   })
 );
@@ -337,8 +355,7 @@ feesRouter.get(
   asyncHandler(async (req, res) => {
     const fee = await loadFee(Number(req.params.id));
     if (!fee) throw new AppError(404, "not_found", "Payment not found");
-    const pdf =
-      fee.pdfPath && fs.existsSync(fee.pdfPath) ? fs.readFileSync(fee.pdfPath) : await receiptPdf(fee);
+    const pdf = await loadReceiptPdf(fee);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${fee.receiptNo}.pdf"`);
     res.end(pdf);
@@ -374,7 +391,7 @@ feesRouter.post(
       `₹ ${fee.amountPaid.toFixed(2)}/- paid on ${formatReceiptDate(fee.paymentDate)}. JazakAllah.`;
 
     if (env.whatsappGateway === "business-api") {
-      const pdf = fee.pdfPath && fs.existsSync(fee.pdfPath) ? fs.readFileSync(fee.pdfPath) : await receiptPdf(fee);
+      const pdf = await loadReceiptPdf(fee);
       await sendWhatsAppDocumentViaBusinessApi(fee.student.whatsappNo, pdf, `${fee.receiptNo}.pdf`, caption);
       await feePaymentRepository.markWhatsappSent(fee.id);
       res.json({ data: { mode: "business-api", whatsappSent: true } });

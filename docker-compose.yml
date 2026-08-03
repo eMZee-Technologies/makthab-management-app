@@ -49,6 +49,13 @@ services:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/makthab_dev
       NODE_ENV: production
       CLIENT_ORIGIN: http://localhost:3000
+      # Local compose keeps filesystem storage; set STORAGE_BACKEND=s3 + S3_* for AWS.
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      LOCAL_UPLOAD_PATH: ${LOCAL_UPLOAD_PATH:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       # Required in production — compose will fail to start the app without these.
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a long random string}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET to a long random string}

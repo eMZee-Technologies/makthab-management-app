@@ -26,6 +26,7 @@
     "migrate:sheets": "tsx prisma/migrate-from-sheets.ts",
     "migrate:xlsx": "tsx prisma/migrate-from-xlsx.ts",
     "migrate:xlsx:pg": "cross-env DATABASE_PROVIDER=postgresql tsx prisma/migrate-from-xlsx.ts",
+    "storage:sync-s3": "tsx scripts/sync-files-to-s3.ts",
     "test": "jest --runInBand",
     "test:pg": "cross-env DATABASE_PROVIDER=postgresql jest --runInBand",
     "test:watch": "jest --runInBand --watch"
@@ -34,11 +35,15 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1101.0",
+    "@aws-sdk/lib-storage": "^3.1101.0",
+    "@aws-sdk/s3-request-presigner": "^3.1101.0",
     "@makthab/shared": "*",
     "@prisma/client": "^5.19.1",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
+    "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
@@ -48,7 +53,6 @@
     "node-cron": "^3.0.3",
     "prisma": "^5.19.1",
     "puppeteer": "^23.3.0",
-    "cross-env": "^7.0.3",
     "tsx": "^4.19.0",
     "winston": "^3.14.2",
     "zod": "^3.23.8"

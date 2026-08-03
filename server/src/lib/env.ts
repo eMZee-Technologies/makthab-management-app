@@ -52,6 +52,18 @@ export function resolveJwtSecret(
   return devFallback;
 }
 
+const STORAGE_BACKENDS = ["local", "s3"] as const;
+type StorageBackend = (typeof STORAGE_BACKENDS)[number];
+
+function storageBackend(): StorageBackend | undefined {
+  const v = process.env.STORAGE_BACKEND;
+  if (v === undefined || v === "") return undefined;
+  if (!(STORAGE_BACKENDS as readonly string[]).includes(v)) {
+    throw new Error(`Invalid STORAGE_BACKEND: "${v}" (expected "local" or "s3")`);
+  }
+  return v as StorageBackend;
+}
+
 const nodeEnv = process.env.NODE_ENV ?? "development";
 
 export const env = {
@@ -89,6 +101,13 @@ export const env = {
   loginLockoutMinutes: Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15),
   // Default role assigned on self-signup (admin may override on approve).
   signupDefaultRole: process.env.SIGNUP_DEFAULT_ROLE ?? "Teacher",
+  // File storage: omit STORAGE_BACKEND to auto-select (s3 in production, local otherwise).
+  storageBackend: storageBackend(),
+  localUploadPath: process.env.LOCAL_UPLOAD_PATH || undefined,
+  s3Bucket: process.env.S3_BUCKET || undefined,
+  awsRegion: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || undefined,
+  awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID || undefined,
+  awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || undefined,
 };
 
 export const isProd = env.nodeEnv === "production";

@@ -4,7 +4,10 @@ import path from "node:path";
 // Repo-root /data directory (holds madrasa.db + generated files). Resolved from
 // this file's location so it is stable regardless of the process CWD.
 export const DATA_DIR = path.resolve(__dirname, "../../../data");
-export const FILES_DIR = path.join(DATA_DIR, "files");
+// LOCAL_UPLOAD_PATH overrides the default `data/files` root (local backend only).
+export const FILES_DIR = process.env.LOCAL_UPLOAD_PATH
+  ? path.resolve(process.env.LOCAL_UPLOAD_PATH)
+  : path.join(DATA_DIR, "files");
 export const RECEIPTS_DIR = path.join(FILES_DIR, "receipts");
 export const PAYSLIPS_DIR = path.join(FILES_DIR, "payslips");
 export const PHOTOS_DIR = path.join(FILES_DIR, "photos");
