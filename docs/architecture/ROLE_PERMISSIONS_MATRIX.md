@@ -43,7 +43,7 @@ stable API identifiers; labels are UI-facing.
 | `fees` | `/fees` | CRUD (structures, payments, receipts) |
 | `attendance` | `/attendance` | View + Create/Update (mark); Delete optional/rare |
 | `finance` | `/finance` | Expenses, staff, salaries |
-| `reports` | `/reports` | View (+ “export” treated as View for MVP) |
+| `reports` | `/reports` | View (+ “export” treated as View for MVP). **Also authorizes GET reads on `/fees`, `/expenses`, and `/salaries`** used by the Reports page tables (`requireModuleAccessOrReportsView`). |
 | `users` | `/users` | CRUD + approve/reject as Update |
 | `roles` | `/roles` | CRUD on role definitions |
 | `organisation` | `/organisation` | View + Update (profiles/letterhead) |
