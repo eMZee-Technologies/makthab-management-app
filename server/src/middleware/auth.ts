@@ -109,6 +109,29 @@ export function requireResourceAny(resource: ResourceKey, actions: Action[]) {
 }
 
 /**
+ * Module access for write methods; for GET/HEAD also allow `reports.view`.
+ * The Reports page reuses fees/finance list APIs for on-screen tables, so a
+ * reports-only role must be able to read those endpoints without fees/finance
+ * grants. Writes still require the module resource.
+ */
+export function requireModuleAccessOrReportsView(resource: ResourceKey) {
+  const moduleActions: Action[] = ["view", "create", "update", "delete"];
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) {
+      throw new AppError(401, "unauthorized", "Authentication required");
+    }
+    const held = heldMatrix(req);
+    const hasModule = moduleActions.some((action) => can(held, resource, action));
+    const isRead = req.method === "GET" || req.method === "HEAD";
+    if (hasModule || (isRead && can(held, "reports", "view"))) {
+      next();
+      return;
+    }
+    throw new AppError(403, "forbidden", "Insufficient permissions for this action");
+  };
+}
+
+/**
  * Dual-read guard for legacy permission keys. Maps each key through
  * LEGACY_KEY_GRANTS onto the JWT matrix (OR across keys). Prefer
  * requireResourcePermission for new code.

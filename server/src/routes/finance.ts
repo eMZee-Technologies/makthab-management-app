@@ -17,7 +17,7 @@ import {
 import { expenseRepository, expenseCategoryRepository, staffRepository, userRepository, salaryPaymentRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireResourcePermission, requireResourceAny } from "../middleware/auth";
+import { requireAuth, requireResourcePermission, requireResourceAny, requireModuleAccessOrReportsView } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextVoucherNo } from "../lib/docNo";
@@ -33,7 +33,8 @@ import {
 import { streamStoredFile } from "../lib/storage";
 // ---- Expenses (Admin, Accountant) ------------------------------------------
 export const expensesRouter = Router();
-expensesRouter.use(requireAuth, requireResourceAny("finance", ["view", "create", "update", "delete"]));
+// Reads also allow reports.view — Reports expense tab lists via /expenses.
+expensesRouter.use(requireAuth, requireModuleAccessOrReportsView("finance"));
 
 expensesRouter.post(
   "/",
@@ -282,7 +283,8 @@ staffRouter.get(
 
 // ---- Salaries (Admin, Accountant) ------------------------------------------
 export const salariesRouter = Router();
-salariesRouter.use(requireAuth, requireResourceAny("finance", ["view", "create", "update", "delete"]));
+// Reads also allow reports.view — Reports salaries tab lists via /salaries.
+salariesRouter.use(requireAuth, requireModuleAccessOrReportsView("finance"));
 
 salariesRouter.get(
   "/",

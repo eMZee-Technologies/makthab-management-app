@@ -12,7 +12,7 @@ import {
 import { feePaymentRepository, studentRepository, feeStructureRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireResourceAny } from "../middleware/auth";
+import { requireAuth, requireModuleAccessOrReportsView } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextReceiptNo } from "../lib/docNo";
@@ -25,7 +25,8 @@ import { getStorage, readStoredFile, normalizeStoredKey } from "../lib/storage";
 import { logger } from "../lib/logger";
 export const feesRouter = Router();
 
-feesRouter.use(requireAuth, requireResourceAny("fees", ["view", "create", "update", "delete"]));
+// Reads also allow reports.view — Reports page tables call /fees list APIs.
+feesRouter.use(requireAuth, requireModuleAccessOrReportsView("fees"));
 
 type FeeWithStudent = Awaited<ReturnType<typeof loadFee>>;
 async function loadFee(id: number) {
