@@ -77,6 +77,7 @@ export function RolesPage() {
                 <TableRow>
                   <TableHead>{t('roles.name')}</TableHead>
                   <TableHead>{t('roles.permissions')}</TableHead>
+                  <TableHead>{t('roles.assignedUsers')}</TableHead>
                   <TableHead className="w-24">{t('common.status')}</TableHead>
                   <TableHead className="text-end">{t('common.actions')}</TableHead>
                 </TableRow>
@@ -89,6 +90,9 @@ export function RolesPage() {
                       <span className="text-sm text-muted-foreground">
                         {r.permissions.length}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-sm text-muted-foreground">{r.assignedUserCount ?? 0}</span>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">

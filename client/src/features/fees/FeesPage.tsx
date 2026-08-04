@@ -29,7 +29,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, formatDate, monthName } from '@/lib/format';
 import { extractApiError } from '@/api/client';
 import { openWhatsApp } from '@/lib/download';
-import { useAuthStore } from '@/store/authStore';
+import { useCan } from '@/lib/permissions';
 import { defaulterUpdateSchema, type DefaulterUpdateInput } from '@/lib/schemas';
 import {
   useFees,
@@ -109,8 +109,8 @@ function PaymentsTable({
 }) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin' || role === 'Accountant';
+  const can = useCan();
+  const canManage = can('fees', 'create') || can('fees', 'update') || can('fees', 'delete');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [editing, setEditing] = useState<FeePayment | null>(null);
@@ -390,8 +390,8 @@ function DefaulterEditDialog({
 
 function DefaultersTab() {
   const { t, i18n } = useTranslation();
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin' || role === 'Accountant';
+  const can = useCan();
+  const canManage = can('fees', 'create') || can('fees', 'update') || can('fees', 'delete');
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [page, setPage] = useState(1);

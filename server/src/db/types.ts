@@ -17,6 +17,7 @@ export type {
   AcademicYear,
   OrgProfile,
   Role,
+  RolePermissionAudit,
   OtpChallenge,
   PasswordResetToken,
   UserApprovalAudit,

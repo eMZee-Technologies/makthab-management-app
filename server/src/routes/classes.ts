@@ -3,7 +3,7 @@ import { classCreateSchema, classUpdateSchema } from "@makthab/shared";
 import { classRepository, studentRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 
 export const classesRouter = Router();
@@ -14,7 +14,7 @@ classesRouter.use(requireAuth);
 // the global Category master list this class offers.
 classesRouter.post(
   "/",
-  requirePermission("classes.manage"),
+  requireResourcePermission("classes", "create"),
   validateBody(classCreateSchema),
   asyncHandler(async (req, res) => {
     const { categoryIds, ...dto } = req.body as typeof classCreateSchema._output;
@@ -35,7 +35,7 @@ classesRouter.post(
 // category assignment can never dangle onto an un-offered category.
 classesRouter.patch(
   "/:id",
-  requirePermission("classes.manage"),
+  requireResourcePermission("classes", "update"),
   validateBody(classUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -72,7 +72,7 @@ classesRouter.patch(
 // DELETE /classes/:id — hard delete, blocked if any student references it.
 classesRouter.delete(
   "/:id",
-  requirePermission("classes.manage"),
+  requireResourcePermission("classes", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const exists = await classRepository.findById(id);

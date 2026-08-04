@@ -34,6 +34,8 @@ export { orgProfileRepository } from "./repositories/org-profile.repository";
 export type { OrgProfile } from "./repositories/org-profile.repository";
 export { roleRepository } from "./repositories/role.repository";
 export type { Role } from "./repositories/role.repository";
+export { rolePermissionAuditRepository } from "./repositories/role-permission-audit.repository";
+export type { RolePermissionAudit } from "./repositories/role-permission-audit.repository";
 
 export { isUniqueConstraintError } from "./client";
 export type { Prisma } from "./types";

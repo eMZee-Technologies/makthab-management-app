@@ -23,7 +23,7 @@ import {
 } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourceAny } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 
 // ---- Users (Admin only) ----------------------------------------------------
@@ -31,7 +31,7 @@ import { AppError } from "../middleware/errorHandler";
 // User login joined 1:1 to a Staff record; contactNo/whatsappNo/address/photo
 // live on Staff, username/email/role/status/password on User.
 export const usersRouter = Router();
-usersRouter.use(requireAuth, requirePermission("users.manage"));
+usersRouter.use(requireAuth, requireResourceAny("users", ["view", "create", "update", "delete"]));
 
 // Flatten a User + its linked Staff into the shared UserDto shape.
 function toUserDto(user: User & { staff: Staff }): UserDto {

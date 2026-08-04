@@ -445,7 +445,80 @@ export function resolveRolePermissionsWrite(input: {
   };
 }
 
-// RoleCreateDto — POST /roles. Phase 2 prefers permissionMatrix; legacy
+/** True when `after` removes any grant that `before` had. */
+export function permissionsShrunk(before: RolePermissions, after: RolePermissions): boolean {
+  const b = effectiveResourceMatrix(before);
+  const a = effectiveResourceMatrix(after);
+  for (const key of RESOURCE_KEYS) {
+    for (const action of ACTIONS) {
+      if (b[key][action] && !a[key][action]) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Phase 3 authorization helper. Accepts a RolePermissions matrix (JWT) or a
+ * legacy permission-key string[] (in-flight old tokens during rollout).
+ */
+export function can(
+  held: RolePermissions | readonly string[] | null | undefined,
+  resource: ResourceKey,
+  action: Action
+): boolean {
+  if (!held) return false;
+  if (!supportedActionsFor(resource).includes(action)) return false;
+  if (Array.isArray(held)) {
+    return can(legacyKeysToMatrix(held), resource, action);
+  }
+  const matrix = held as RolePermissions;
+  if (matrix.mode === "all") return true;
+  return Boolean(matrix.resources?.[resource]?.[action]);
+}
+
+export function canAny(
+  held: RolePermissions | readonly string[] | null | undefined,
+  resource: ResourceKey,
+  actions: readonly Action[]
+): boolean {
+  return actions.some((action) => can(held, resource, action));
+}
+
+/** Whether held grants satisfy a legacy catalog key (for dual-read guards). */
+export function allowsLegacyPermission(
+  held: RolePermissions | readonly string[] | null | undefined,
+  key: string
+): boolean {
+  if (!held) return false;
+  if (Array.isArray(held)) return held.includes(key);
+  const grants = LEGACY_KEY_GRANTS[key as PermissionKey];
+  if (!grants) return false;
+  return (Object.entries(grants) as [ResourceKey, readonly Action[]][]).every(
+    ([resource, actions]) => actions.every((action) => can(held, resource, action))
+  );
+}
+
+/** Normalize JWT / AuthUser held permissions into a RolePermissions object. */
+export function coerceHeldPermissions(
+  held:
+    | RolePermissions
+    | readonly string[]
+    | { permissionMatrix?: RolePermissions; permissions?: readonly string[] }
+    | null
+    | undefined
+): RolePermissions | undefined {
+  if (!held) return undefined;
+  if (Array.isArray(held)) return legacyKeysToMatrix(held);
+  if (typeof held === "object" && held !== null && "mode" in held) {
+    return held as RolePermissions;
+  }
+  const bag = held as { permissionMatrix?: RolePermissions; permissions?: readonly string[] };
+  if (bag.permissionMatrix) return bag.permissionMatrix;
+  if (bag.permissions) return legacyKeysToMatrix(bag.permissions);
+  return undefined;
+}
+
+// RoleCreateDto — POST /roles. Phase 2+ prefers permissionMatrix; legacy
 // permissions[] still accepted for backward compatibility.
 export const roleCreateSchema = z.object({
   name: z.string().trim().min(1),
@@ -474,13 +547,21 @@ export const roleUpdateSchema = z
   );
 export type RoleUpdateDto = z.infer<typeof roleUpdateSchema>;
 
+export const roleReassignSchema = z.object({
+  toRoleId: z.coerce.number().int().positive(),
+});
+export type RoleReassignDto = z.infer<typeof roleReassignSchema>;
+
 export type RoleDto = {
   id: number;
   name: string;
+  /** @deprecated Phase 3 — derived legacy keys for display/compat only */
   permissions: string[];
   permissionMatrix: RolePermissions;
   isSystem: boolean;
   isFullAccess: boolean;
+  permissionsVersion: number;
+  assignedUserCount: number;
   createdAt: string;
   updatedAt: string;
 };

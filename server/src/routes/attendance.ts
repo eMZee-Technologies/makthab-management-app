@@ -8,13 +8,13 @@ import {
 import { attendanceRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourceAny } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 
 export const attendanceRouter = Router();
 
-attendanceRouter.use(requireAuth, requirePermission("attendance.mark"));
+attendanceRouter.use(requireAuth, requireResourceAny("attendance", ["view", "create", "update"]));
 
 // Build a Prisma date-range filter for a month/year or a single date.
 function dateFilter(q: AttendanceListQuery): { gte: Date; lt: Date } | undefined {

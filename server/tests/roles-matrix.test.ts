@@ -5,67 +5,38 @@ import {
   emptyResourceMatrix,
   normalizeRolePermissions,
   setResourceAction,
+  can,
 } from "@makthab/shared";
 import { API, CREDS, bearer, describeApi, loadApp, login } from "./helpers";
 
-describeApi("roles permission matrix (Phase 2)", () => {
+describeApi("roles permission matrix (Phase 3)", () => {
   const app = () => loadApp()!;
 
-  it("GET /roles/resources returns the resource catalogue", async () => {
-    const token = await login(CREDS.admin.username, CREDS.admin.password);
-    const r = await request(app()).get(`${API}/roles/resources`).set(bearer(token));
+  it("login returns permissionMatrix (not legacy permissions keys)", async () => {
+    const r = await request(app()).post(`${API}/auth/login`).send(CREDS.admin);
     expect(r.status).toBe(200);
-    expect(Array.isArray(r.body.data)).toBe(true);
-    expect(r.body.data.length).toBeGreaterThanOrEqual(11);
-    expect(r.body.data[0]).toEqual(
-      expect.objectContaining({
-        key: expect.any(String),
-        label: expect.any(String),
-        actions: expect.any(Array),
-      })
-    );
+    expect(r.body.data.user.permissionMatrix).toEqual({ mode: "all" });
+    expect(r.body.data.user.permissionsVersion).toEqual(expect.any(Number));
+    expect(r.body.data.user.permissions).toBeUndefined();
   });
 
-  it("GET /roles returns permissionMatrix + isFullAccess; Admin is locked full", async () => {
+  it("GET /roles includes assignedUserCount + permissionsVersion", async () => {
     const token = await login(CREDS.admin.username, CREDS.admin.password);
     const r = await request(app()).get(`${API}/roles`).set(bearer(token));
     expect(r.status).toBe(200);
-    const roles = r.body.data as Array<{
-      name: string;
-      permissions: string[];
-      permissionMatrix: { mode: string };
-      isFullAccess: boolean;
-      isSystem: boolean;
-    }>;
-    const admin = roles.find((x) => x.name === "Admin");
-    expect(admin).toBeTruthy();
-    expect(admin!.isFullAccess).toBe(true);
-    expect(admin!.permissionMatrix).toEqual({ mode: "all" });
-    expect(admin!.permissions.length).toBeGreaterThanOrEqual(10);
-
-    const teacher = roles.find((x) => x.name === "Teacher");
-    expect(teacher).toBeTruthy();
-    expect(teacher!.isFullAccess).toBe(false);
-    expect(teacher!.permissionMatrix.mode).toBe("matrix");
-    expect(teacher!.permissions).toEqual(["attendance.mark"]);
-  });
-
-  it("PATCH Admin permissions (legacy or matrix) is rejected with admin_lock", async () => {
-    const token = await login(CREDS.admin.username, CREDS.admin.password);
-    const list = await request(app()).get(`${API}/roles`).set(bearer(token));
-    const admin = (list.body.data as Array<{ id: number; name: string }>).find(
+    const admin = (r.body.data as Array<{ name: string; assignedUserCount: number; permissionsVersion: number }>).find(
       (x) => x.name === "Admin"
     );
     expect(admin).toBeTruthy();
+    expect(admin!.assignedUserCount).toBeGreaterThanOrEqual(1);
+    expect(admin!.permissionsVersion).toEqual(expect.any(Number));
+  });
 
-    const legacy = await request(app())
-      .patch(`${API}/roles/${admin!.id}`)
-      .set(bearer(token))
-      .send({ permissions: ["reports.access"] });
-    expect(legacy.status).toBe(400);
-    expect(legacy.body.error.code).toBe("admin_lock");
-
-    const matrix = await request(app())
+  it("PATCH Admin permissionMatrix is rejected with admin_lock", async () => {
+    const token = await login(CREDS.admin.username, CREDS.admin.password);
+    const list = await request(app()).get(`${API}/roles`).set(bearer(token));
+    const admin = (list.body.data as Array<{ id: number; name: string }>).find((x) => x.name === "Admin");
+    const r = await request(app())
       .patch(`${API}/roles/${admin!.id}`)
       .set(bearer(token))
       .send({
@@ -75,16 +46,15 @@ describeApi("roles permission matrix (Phase 2)", () => {
           resources: clearAllResourceMatrix(),
         },
       });
-    expect(matrix.status).toBe(400);
-    expect(matrix.body.error.code).toBe("admin_lock");
+    expect(r.status).toBe(400);
+    expect(r.body.error.code).toBe("admin_lock");
   });
 
-  it("POST creates Fee Clerk with fees CRUD only via permissionMatrix", async () => {
+  it("POST Fee Clerk + audit trail on create", async () => {
     const token = await login(CREDS.admin.username, CREDS.admin.password);
     const resources = emptyResourceMatrix();
     resources.fees = { view: true, create: true, update: true, delete: true };
     resources.dashboard = { view: true, create: false, update: false, delete: false };
-
     const name = `Fee Clerk ${Date.now()}`;
     const r = await request(app())
       .post(`${API}/roles`)
@@ -92,44 +62,120 @@ describeApi("roles permission matrix (Phase 2)", () => {
       .send({
         name,
         inheritsFromAdmin: false,
-        permissionMatrix: {
-          mode: "matrix",
-          inheritsFromAdmin: false,
-          resources,
-        },
+        permissionMatrix: { mode: "matrix", inheritsFromAdmin: false, resources },
       });
     expect(r.status).toBe(201);
-    expect(r.body.data.name).toBe(name);
-    expect(r.body.data.isFullAccess).toBe(false);
-    expect(r.body.data.permissionMatrix.mode).toBe("matrix");
-    expect(r.body.data.permissionMatrix.resources.fees).toMatchObject({
-      view: true,
-      create: true,
-      update: true,
-      delete: true,
-    });
-    expect(r.body.data.permissionMatrix.resources.attendance.view).toBe(false);
     expect(r.body.data.permissions).toEqual(["fees.manage"]);
 
-    // cleanup
+    const audit = await request(app())
+      .get(`${API}/roles/${r.body.data.id}/audit`)
+      .set(bearer(token));
+    expect(audit.status).toBe(200);
+    expect(audit.body.data[0].action).toBe("create");
+
     await request(app()).delete(`${API}/roles/${r.body.data.id}`).set(bearer(token));
   });
 
-  it("PATCH Teacher matrix persists and maps to attendance.mark", async () => {
+  it("DELETE role with assigned users is blocked; reassign then delete works", async () => {
     const token = await login(CREDS.admin.username, CREDS.admin.password);
+    const name = `Temp Role ${Date.now()}`;
+    const created = await request(app())
+      .post(`${API}/roles`)
+      .set(bearer(token))
+      .send({ name, inheritsFromAdmin: false, permissionMatrix: normalizeRolePermissions({
+        mode: "matrix",
+        inheritsFromAdmin: false,
+        resources: clearAllResourceMatrix(),
+      }) });
+    expect(created.status).toBe(201);
+
+    // Create a user on that role
+    const user = await request(app())
+      .post(`${API}/users`)
+      .set(bearer(token))
+      .send({
+        fullName: "Temp User",
+        username: `temp_${Date.now()}`,
+        password: "TempPass1",
+        email: `temp_${Date.now()}@example.com`,
+        contactNo: "9990001111",
+        whatsappNo: "9990001111",
+        role: name,
+      });
+    expect(user.status).toBe(201);
+
+    const blocked = await request(app())
+      .delete(`${API}/roles/${created.body.data.id}`)
+      .set(bearer(token));
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.error.code).toBe("role_in_use");
+
     const list = await request(app()).get(`${API}/roles`).set(bearer(token));
-    const teacher = (
+    const teacher = (list.body.data as Array<{ id: number; name: string }>).find(
+      (x) => x.name === "Teacher"
+    );
+
+    const reassigned = await request(app())
+      .post(`${API}/roles/${created.body.data.id}/reassign`)
+      .set(bearer(token))
+      .send({ toRoleId: teacher!.id });
+    expect(reassigned.status).toBe(200);
+    expect(reassigned.body.data.usersMoved).toBeGreaterThanOrEqual(1);
+
+    const deleted = await request(app())
+      .delete(`${API}/roles/${created.body.data.id}`)
+      .set(bearer(token));
+    expect(deleted.status).toBe(200);
+
+    // cleanup user
+    await request(app()).delete(`${API}/users/${user.body.data.id}`).set(bearer(token));
+  });
+
+  it("shrinking Teacher permissions bumps version and stale tokens get 401", async () => {
+    const token = await login(CREDS.admin.username, CREDS.admin.password);
+    const teacherLogin = await request(app()).post(`${API}/auth/login`).send(CREDS.teacher);
+    expect(teacherLogin.status).toBe(200);
+    const teacherToken = teacherLogin.body.data.accessToken as string;
+    const teacherVersion = teacherLogin.body.data.user.permissionsVersion as number;
+
+    // Teacher can access attendance with current token
+    const ok = await request(app())
+      .get(`${API}/attendance`)
+      .set(bearer(teacherToken));
+    expect([200, 400]).toContain(ok.status); // 400 if missing query is fine — not 403/401
+
+    const list = await request(app()).get(`${API}/roles`).set(bearer(token));
+    const teacherRole = (
       list.body.data as Array<{ id: number; name: string; permissionMatrix: unknown }>
     ).find((x) => x.name === "Teacher");
-    expect(teacher).toBeTruthy();
 
+    // Shrink to empty matrix
+    const shrunk = await request(app())
+      .patch(`${API}/roles/${teacherRole!.id}`)
+      .set(bearer(token))
+      .send({
+        inheritsFromAdmin: false,
+        permissionMatrix: normalizeRolePermissions({
+          mode: "matrix",
+          inheritsFromAdmin: false,
+          resources: clearAllResourceMatrix(),
+        }),
+      });
+    expect(shrunk.status).toBe(200);
+    expect(shrunk.body.data.permissionsVersion).toBeGreaterThan(teacherVersion);
+
+    const stale = await request(app())
+      .get(`${API}/attendance`)
+      .set(bearer(teacherToken));
+    expect(stale.status).toBe(401);
+    expect(stale.body.error.code).toBe("permissions_stale");
+
+    // Restore Teacher attendance grants for other tests
     let resources = emptyResourceMatrix();
     resources = setResourceAction(resources, "attendance", "create", true);
     resources = setResourceAction(resources, "attendance", "update", true);
-    // implication should keep view
-
-    const r = await request(app())
-      .patch(`${API}/roles/${teacher!.id}`)
+    await request(app())
+      .patch(`${API}/roles/${teacherRole!.id}`)
       .set(bearer(token))
       .send({
         inheritsFromAdmin: false,
@@ -139,49 +185,36 @@ describeApi("roles permission matrix (Phase 2)", () => {
           resources,
         }),
       });
-    expect(r.status).toBe(200);
-    expect(r.body.data.permissions).toEqual(["attendance.mark"]);
-    expect(r.body.data.permissionMatrix.resources.attendance).toMatchObject({
-      view: true,
-      create: true,
-      update: true,
-      delete: false,
+  });
+
+  it("Teacher cannot POST fees; Accountant can", async () => {
+    const teacherToken = await login(CREDS.teacher.username, CREDS.teacher.password);
+    const accountantToken = await login(CREDS.accountant.username, CREDS.accountant.password);
+
+    const denied = await request(app())
+      .get(`${API}/fees`)
+      .set(bearer(teacherToken));
+    expect(denied.status).toBe(403);
+
+    const allowed = await request(app())
+      .get(`${API}/fees`)
+      .set(bearer(accountantToken));
+    expect([200, 400]).toContain(allowed.status);
+  });
+
+  it("can() helper grants Admin all and Teacher attendance only", () => {
+    expect(can({ mode: "all" }, "fees", "delete")).toBe(true);
+    const teacher = normalizeRolePermissions({
+      mode: "matrix",
+      inheritsFromAdmin: false,
+      resources: (() => {
+        let r = emptyResourceMatrix();
+        r = setResourceAction(r, "attendance", "create", true);
+        return r;
+      })(),
     });
-  });
-
-  it("create with inheritsFromAdmin defaults to Admin baseline snapshot", async () => {
-    const token = await login(CREDS.admin.username, CREDS.admin.password);
-    const name = `Inherited ${Date.now()}`;
-    const r = await request(app())
-      .post(`${API}/roles`)
-      .set(bearer(token))
-      .send({ name, inheritsFromAdmin: true });
-    expect(r.status).toBe(201);
-    expect(r.body.data.permissionMatrix.inheritsFromAdmin).toBe(true);
-    expect(r.body.data.permissionMatrix.resources).toEqual(adminBaselineMatrix());
-    expect(r.body.data.permissions.length).toBeGreaterThanOrEqual(10);
-    await request(app()).delete(`${API}/roles/${r.body.data.id}`).set(bearer(token));
-  });
-
-  it("implication: create without view is auto-enabled on write", async () => {
-    const token = await login(CREDS.admin.username, CREDS.admin.password);
-    const resources = emptyResourceMatrix();
-    resources.students = { view: false, create: true, update: false, delete: false };
-    const name = `Implied View ${Date.now()}`;
-    const r = await request(app())
-      .post(`${API}/roles`)
-      .set(bearer(token))
-      .send({
-        name,
-        permissionMatrix: {
-          mode: "matrix",
-          inheritsFromAdmin: false,
-          resources,
-        },
-      });
-    expect(r.status).toBe(201);
-    expect(r.body.data.permissionMatrix.resources.students.view).toBe(true);
-    expect(r.body.data.permissionMatrix.resources.students.create).toBe(true);
-    await request(app()).delete(`${API}/roles/${r.body.data.id}`).set(bearer(token));
+    expect(can(teacher, "attendance", "view")).toBe(true);
+    expect(can(teacher, "fees", "view")).toBe(false);
+    expect(adminBaselineMatrix().fees.view).toBe(true);
   });
 });

@@ -8,7 +8,7 @@ import {
 import { studentRepository, classRepository, feePaymentRepository, attendanceRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { renderPdf } from "../lib/pdf";
 import { getOrgHeader } from "../lib/orgProfile";
@@ -57,7 +57,7 @@ studentsRouter.get(
 // POST /students — admit a student (Admin only; §6 roles).
 studentsRouter.post(
   "/",
-  requirePermission("students.manage"),
+  requireResourcePermission("students", "create"),
   validateBody(studentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof studentCreateSchema._output;
@@ -119,10 +119,10 @@ studentsRouter.get(
   })
 );
 
-// PATCH /students/:id — update fields (Admin only).
+// PATCH /students/:id — update fields.
 studentsRouter.patch(
   "/:id",
-  requirePermission("students.manage"),
+  requireResourcePermission("students", "update"),
   validateBody(studentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -144,7 +144,7 @@ studentsRouter.patch(
 // (double-click, retry) should succeed quietly rather than surface an error.
 studentsRouter.delete(
   "/:id",
-  requirePermission("students.manage"),
+  requireResourcePermission("students", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const exists = await studentRepository.findById(id);
@@ -185,10 +185,10 @@ studentsRouter.get(
   })
 );
 
-// POST /students/:id/photo — upload/replace the student photo (Admin only).
+// POST /students/:id/photo — upload/replace the student photo.
 studentsRouter.post(
   "/:id/photo",
-  requirePermission("students.manage"),
+  requireResourcePermission("students", "update"),
   uploadStudentPhoto,
   asyncHandler(async (req, res) => {
     if (!req.file) {

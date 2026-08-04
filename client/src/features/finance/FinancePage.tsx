@@ -23,7 +23,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, formatDate, monthName } from '@/lib/format';
 import { extractApiError } from '@/api/client';
 import { useExpenseCategories } from '@/api/reference';
-import { useAuthStore } from '@/store/authStore';
+import { useCan } from '@/lib/permissions';
 import {
   expenseCreateSchema,
   type ExpenseCreateInput,
@@ -154,8 +154,8 @@ function ExpensesTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [deleting, setDeleting] = useState<Expense | null>(null);
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin';
+  const can = useCan();
+  const canManage = can('finance', 'update') || can('finance', 'delete');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
@@ -306,8 +306,8 @@ function StaffTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Staff | null>(null);
   const [deleting, setDeleting] = useState<Staff | null>(null);
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin' || role === 'Accountant';
+  const can = useCan();
+  const canManage = can('finance', 'create') || can('finance', 'update') || can('finance', 'delete');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
@@ -442,8 +442,8 @@ function SalariesTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SalaryPayment | null>(null);
   const [deleting, setDeleting] = useState<SalaryPayment | null>(null);
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin' || role === 'Accountant';
+  const can = useCan();
+  const canManage = can('finance', 'create') || can('finance', 'update') || can('finance', 'delete');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });

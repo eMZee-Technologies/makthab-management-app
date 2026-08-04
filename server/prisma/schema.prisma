@@ -170,6 +170,7 @@ model User {
   approvalSubjectOf  UserApprovalAudit[]  @relation("ApprovalSubject")
   approvalActorOf    UserApprovalAudit[]  @relation("ApprovalActor")
   notifications      AdminNotification[]
+  rolePermissionAudits RolePermissionAudit[]
 }
 
 // One-time passcode challenge for signup verification and password reset.
@@ -343,14 +344,37 @@ model OrgProfile {
 // RolePermissions object (`{ mode: "all" }` / `{ mode: "matrix", ... }`);
 // see @makthab/shared adapters. isSystem rows (Admin/Accountant/Teacher) are
 // seeded and cannot be deleted. isFullAccess (Admin) locks full grants and
-// cannot be cleared. User.role stores the role NAME (unchanged), resolved to
-// a permission set at login.
+// cannot be cleared. permissionsVersion bumps when grants shrink so in-flight
+// access tokens are rejected until refresh. User.role stores the role NAME.
 model Role {
-  id           Int      @id @default(autoincrement())
-  name         String   @unique
-  permissions  String // JSON: legacy string[] OR RolePermissions object
-  isSystem     Boolean  @default(false)
-  isFullAccess Boolean  @default(false) // Admin lock — always all permissions
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 Int      @id @default(autoincrement())
+  name               String   @unique
+  permissions        String // JSON: legacy string[] OR RolePermissions object
+  isSystem           Boolean  @default(false)
+  isFullAccess       Boolean  @default(false) // Admin lock — always all permissions
+  permissionsVersion Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  audits RolePermissionAudit[]
+}
+
+// Immutable audit trail of role permission changes (Phase 3).
+// roleId is optional so rows survive role deletion (onDelete: SetNull).
+model RolePermissionAudit {
+  id          Int      @id @default(autoincrement())
+  roleId      Int?
+  actorUserId Int
+  action      String // create | update | delete | reassign
+  beforeJson  String? // JSON RolePermissions (null on create)
+  afterJson   String? // JSON RolePermissions (null on delete)
+  metaJson    String? // optional JSON (e.g. reassign target role, roleName)
+  createdAt   DateTime @default(now())
+
+  role  Role? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  actor User  @relation(fields: [actorUserId], references: [id])
+
+  @@index([roleId])
+  @@index([actorUserId])
+  @@index([createdAt])
 }

@@ -17,7 +17,7 @@ import {
 import { expenseRepository, expenseCategoryRepository, staffRepository, userRepository, salaryPaymentRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireRole, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourcePermission, requireResourceAny } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextVoucherNo } from "../lib/docNo";
@@ -33,10 +33,11 @@ import {
 import { streamStoredFile } from "../lib/storage";
 // ---- Expenses (Admin, Accountant) ------------------------------------------
 export const expensesRouter = Router();
-expensesRouter.use(requireAuth, requirePermission("finance.manage"));
+expensesRouter.use(requireAuth, requireResourceAny("finance", ["view", "create", "update", "delete"]));
 
 expensesRouter.post(
   "/",
+  requireResourcePermission("finance", "create"),
   validateBody(expenseCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof expenseCreateSchema._output;
@@ -57,11 +58,10 @@ expensesRouter.post(
   })
 );
 
-// PATCH /expenses/:id — edit an entry (Admin only). amount is re-derived from
-// the effective cost * quantity; a client-sent amount is never trusted.
+// PATCH /expenses/:id — edit an entry (requires finance.update).
 expensesRouter.patch(
   "/:id",
-  requireRole("Admin"),
+  requireResourcePermission("finance", "update"),
   validateBody(expenseUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -90,10 +90,10 @@ expensesRouter.patch(
   })
 );
 
-// DELETE /expenses/:id — hard delete (Admin only). No model FKs onto Expense.
+// DELETE /expenses/:id — hard delete (requires finance.delete).
 expensesRouter.delete(
   "/:id",
-  requireRole("Admin"),
+  requireResourcePermission("finance", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await expenseRepository.findById(id);
@@ -133,7 +133,7 @@ expensesRouter.get(
 
 // ---- Staff (Admin, Accountant) ---------------------------------------------
 export const staffRouter = Router();
-staffRouter.use(requireAuth, requirePermission("finance.manage"));
+staffRouter.use(requireAuth, requireResourceAny("finance", ["view", "create", "update", "delete"]));
 
 staffRouter.get(
   "/",
@@ -147,7 +147,7 @@ staffRouter.get(
 
 staffRouter.post(
   "/",
-  requireRole("Admin"),
+  requireResourcePermission("finance", "create"),
   validateBody(staffCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof staffCreateSchema._output;
@@ -282,7 +282,7 @@ staffRouter.get(
 
 // ---- Salaries (Admin, Accountant) ------------------------------------------
 export const salariesRouter = Router();
-salariesRouter.use(requireAuth, requirePermission("finance.manage"));
+salariesRouter.use(requireAuth, requireResourceAny("finance", ["view", "create", "update", "delete"]));
 
 salariesRouter.get(
   "/",

@@ -42,7 +42,16 @@ Implement all models from doc §7.1: **Student, FeePayment, Attendance, Expense,
 `server/prisma/schema.prisma` is now the **canonical PostgreSQL schema**; `server/prisma/sqlite/schema.prisma` is **generated** from it (`npm run db:generate:sqlite-schema -w server`) and must never be hand-edited. Each variant keeps its own migration history (`server/prisma/migrations/` for Postgres, `server/prisma/sqlite/migrations/` for SQLite — the latter holds the original, real migration history applied to `data/madrasa.db`). `DATABASE_PROVIDER=sqlite|postgresql` (default `sqlite`) selects which generated client (`server/prisma/generated/{postgres,sqlite}-client`) the app loads at startup via `server/src/db/client.ts`. All data access outside `server/src/db/*` goes through the repository layer in `server/src/db/index.ts` — route/service code never imports `@prisma/client` or a generated-client path directly.
 
 ## 6. Roles / access (enforce on BOTH tiers)
-- Admin: full. Accountant: fees, expenses, salaries (no student profile edit). Teacher: attendance for assigned classes only.
+- Access is a **resource × action** matrix (View/Create/Update/Delete) stored on
+  `Role` and baked into the JWT as `permissionMatrix` (see
+  `docs/architecture/ROLE_PERMISSIONS_MATRIX.md`).
+- Seeded system roles: **Admin** (`isFullAccess` / `{ mode: "all" }`),
+  **Accountant** (fees/finance/reports), **Teacher** (attendance). Custom roles
+  are admin-definable.
+- Guards: `requireResourcePermission(resource, action)` /
+  `requireResourceAny(...)`. Client: `can(matrix, resource, action)`.
+- Shrinking a role’s grants bumps `Role.permissionsVersion` and rejects stale
+  access tokens until refresh (`permissions_stale`).
 
 ## 7. Definition of Done (QA gate)
 - `pnpm install` (or `npm install`) clean at root.
@@ -52,6 +61,7 @@ Implement all models from doc §7.1: **Student, FeePayment, Attendance, Expense,
 - No console errors on the happy path. RTL toggle does not break layout.
 
 ## 8. Contract changelog (append when you change the contract)
+- 2026-08-04 — **Roles permissions matrix Phase 3.** JWT carries `permissionMatrix` (no legacy keys). `RolePermissionAudit`, `permissionsVersion` shrink invalidation, role reassign + delete-blocked-when-in-use, resource guards replace `requireRole("Admin")` / legacy keys, client `can()` gating. Design: `docs/architecture/ROLE_PERMISSIONS_MATRIX.md`.
 - 2026-08-04 — **Roles permissions matrix Phase 2.** Interactive resource CRUD matrix on Roles UI (inherit toggle, override markers, select/clear/reset). POST/PATCH `/roles` accept `permissionMatrix` (legacy `permissions[]` still accepted). JWT still carries legacy keys via adapters. Design: `docs/architecture/ROLE_PERMISSIONS_MATRIX.md`.
 - 2026-08-04 — **Roles permissions matrix Phase 1.** Resource CRUD matrix (read-only UI), `Role.isFullAccess`, dual-read storage (`string[]` or `RolePermissions`), `GET /roles/resources`, Admin permission lock. Legacy JWT keys unchanged via adapters. Design: `docs/architecture/ROLE_PERMISSIONS_MATRIX.md`.
 - 2026-08-04 — **Roles permissions matrix plan (proposed).** Evolve coarse `PERMISSION_CATALOG` keys into a per-resource CRUD matrix (View/Create/Update/Delete) with Admin full-access lock, inheritance/overrides, and phased migration. Design doc: `docs/architecture/ROLE_PERMISSIONS_MATRIX.md`. §6 roles text remains in force until Phase 3 lands.

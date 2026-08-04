@@ -9,6 +9,8 @@ export interface Role {
   permissionMatrix: RolePermissions;
   isSystem: boolean;
   isFullAccess: boolean;
+  permissionsVersion: number;
+  assignedUserCount: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -17,7 +19,7 @@ export type RoleWriteInput = {
   name?: string;
   inheritsFromAdmin?: boolean;
   permissionMatrix?: RolePermissionsMatrix;
-  /** @deprecated Phase 1 legacy — prefer permissionMatrix */
+  /** @deprecated prefer permissionMatrix */
   permissions?: string[];
 };
 
@@ -53,5 +55,19 @@ export function useDeleteRole() {
   return useMutation({
     mutationFn: async (id: number) => (await api.delete(`/roles/${id}`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
+  });
+}
+
+export function useReassignRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: number; toRoleId: number }) =>
+      unwrap<{ fromRoleId: number; toRoleId: number; usersMoved: number }>(
+        (await api.post(`/roles/${input.id}/reassign`, { toRoleId: input.toRoleId })).data,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['roles'] });
+      qc.invalidateQueries({ queryKey: ['users'] });
+    },
   });
 }

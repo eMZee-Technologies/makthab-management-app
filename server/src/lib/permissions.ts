@@ -1,13 +1,32 @@
-import { toLegacyPermissionKeys } from "@makthab/shared";
+import {
+  emptyResourceMatrix,
+  parseRolePermissionsJson,
+  type RolePermissions,
+} from "@makthab/shared";
 import { roleRepository } from "../db";
 
-// Resolve a role NAME to its permission-key set (from the DB-backed Role row).
-// Used at login/refresh to bake permissions into the access token. Supports
-// dual-read: legacy JSON string[] OR RolePermissions matrix / { mode: "all" }.
-// An unknown role name (or a corrupt permissions column) resolves to no
-// permissions rather than throwing — the user simply can't reach anything guarded.
-export async function resolvePermissions(roleName: string): Promise<string[]> {
+export type ResolvedRoleAccess = {
+  permissionMatrix: RolePermissions;
+  permissionsVersion: number;
+};
+
+// Resolve a role NAME to its permission matrix + version (from the DB-backed
+// Role row). Used at login/refresh to bake grants into the access token.
+// Unknown / corrupt roles resolve to an empty matrix rather than throwing.
+export async function resolveRoleAccess(roleName: string): Promise<ResolvedRoleAccess> {
   const role = await roleRepository.findByName(roleName);
-  if (!role) return [];
-  return toLegacyPermissionKeys(role.permissions);
+  if (!role) {
+    return {
+      permissionMatrix: {
+        mode: "matrix",
+        inheritsFromAdmin: false,
+        resources: emptyResourceMatrix(),
+      },
+      permissionsVersion: 0,
+    };
+  }
+  return {
+    permissionMatrix: parseRolePermissionsJson(role.permissions),
+    permissionsVersion: role.permissionsVersion,
+  };
 }

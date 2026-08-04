@@ -152,6 +152,12 @@ export function RoleForm({ open, onOpenChange, role }: Props) {
             }}
           />
 
+          {isEdit && (role?.assignedUserCount ?? 0) > 0 && !permissionsLocked && (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              {t('roles.assignedUsersWarning', { count: role?.assignedUserCount ?? 0 })}
+            </p>
+          )}
+
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t('common.cancel')}

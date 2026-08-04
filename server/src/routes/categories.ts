@@ -3,7 +3,7 @@ import { categoryCreateSchema, categoryUpdateSchema } from "@makthab/shared";
 import { categoryRepository, classRepository, studentRepository, feeStructureRepository, isUniqueConstraintError } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourceAny } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 
 // Global category master list (e.g. Noorani Qaida, Naazira Quran, Hifz
@@ -11,7 +11,7 @@ import { AppError } from "../middleware/errorHandler";
 // here are gated by classes.manage since categories only matter in the
 // context of what a class offers.
 export const categoriesRouter = Router();
-categoriesRouter.use(requireAuth, requirePermission("classes.manage"));
+categoriesRouter.use(requireAuth, requireResourceAny("classes", ["create", "update", "delete"]));
 
 categoriesRouter.post(
   "/",

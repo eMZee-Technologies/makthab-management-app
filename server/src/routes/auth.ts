@@ -19,7 +19,7 @@ import {
   isUniqueConstraintError,
 } from "../db";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt";
-import { resolvePermissions } from "../lib/permissions";
+import { resolveRoleAccess } from "../lib/permissions";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
 import { AppError } from "../middleware/errorHandler";
@@ -300,13 +300,14 @@ authRouter.post(
     await userRepository.clearLoginFailures(user.id);
 
     const role = user.role;
-    const permissions = await resolvePermissions(role);
+    const { permissionMatrix, permissionsVersion } = await resolveRoleAccess(role);
     const accessToken = signAccessToken({
       sub: user.id,
       staffId: user.staffId,
       username: user.username,
       role,
-      permissions,
+      permissionMatrix,
+      permissionsVersion,
     });
     const refreshToken = signRefreshToken(user.id);
 
@@ -314,7 +315,14 @@ authRouter.post(
       data: {
         accessToken,
         refreshToken,
-        user: { id: user.id, fullName: user.staff.fullName, username: user.username, role, permissions },
+        user: {
+          id: user.id,
+          fullName: user.staff.fullName,
+          username: user.username,
+          role,
+          permissionMatrix,
+          permissionsVersion,
+        },
       },
     });
   })
@@ -338,19 +346,27 @@ authRouter.post(
       throw new AppError(401, "unauthorized", "User no longer active");
     }
     const role = user.role;
-    const permissions = await resolvePermissions(role);
+    const { permissionMatrix, permissionsVersion } = await resolveRoleAccess(role);
     const accessToken = signAccessToken({
       sub: user.id,
       staffId: user.staffId,
       username: user.username,
       role,
-      permissions,
+      permissionMatrix,
+      permissionsVersion,
     });
     res.json({
       data: {
         accessToken,
         refreshToken: signRefreshToken(user.id),
-        user: { id: user.id, fullName: user.staff.fullName, username: user.username, role, permissions },
+        user: {
+          id: user.id,
+          fullName: user.staff.fullName,
+          username: user.username,
+          role,
+          permissionMatrix,
+          permissionsVersion,
+        },
       },
     });
   })

@@ -2,7 +2,7 @@ import type { Response } from "express";
 import { Router } from "express";
 import { feePaymentRepository, salaryPaymentRepository, expenseRepository, studentRepository, attendanceRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourcePermission } from "../middleware/auth";
 import { validateQuery } from "../middleware/validate";
 import { renderPdf } from "../lib/pdf";
 import { renderXlsx, XLSX_CONTENT_TYPE } from "../lib/excel";
@@ -27,7 +27,7 @@ export const reportsRouter = Router();
 // B5: reports are gated by the `reports.access` permission (held by Admin +
 // Accountant, and grantable to any custom "management" role) rather than a
 // hardcoded role list.
-reportsRouter.use(requireAuth, requirePermission("reports.access"));
+reportsRouter.use(requireAuth, requireResourcePermission("reports", "view"));
 
 
 // Aggregate a single year's monthly-fee payments by month (all 12, zero-filled).

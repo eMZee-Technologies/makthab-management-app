@@ -20,7 +20,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useClasses, useDeleteClass } from '@/api/reference';
 import { useStaff } from '@/features/finance/api';
 import { extractApiError } from '@/api/client';
-import { useAuthStore } from '@/store/authStore';
+import { useCan } from '@/lib/permissions';
 import { ClassForm } from './ClassForm';
 import { CategoriesTab } from './CategoriesTab';
 import type { Class } from '@/types/domain';
@@ -30,13 +30,13 @@ export function ClassesPage() {
   const { toast } = useToast();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Class | null>(null);
-  const role = useAuthStore((s) => s.user?.role);
+  const can = useCan();
 
   const { data, isLoading, isError, refetch } = useClasses();
   const { data: staff } = useStaff({ limit: 200 });
   const del = useDeleteClass();
 
-  const canManage = role === 'Admin';
+  const canManage = can('classes', 'create') || can('classes', 'update') || can('classes', 'delete');
 
   const { sort, toggle } = useSort({ sortBy: 'name', sortOrder: 'asc' });
   const [page, setPage] = useState(1);

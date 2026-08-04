@@ -344,6 +344,8 @@
     "selectAll": "Select all",
     "clearAll": "Clear all",
     "resetBaseline": "Reset to Admin baseline",
+    "assignedUsers": "Users",
+    "assignedUsersWarning": "This role is assigned to {{count}} user(s). Reducing permissions invalidates their access tokens until refresh.",
     "created": "Role added successfully",
     "updated": "Role updated successfully",
     "deleted": "Role deleted successfully",
