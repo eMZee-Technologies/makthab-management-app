@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import {
@@ -22,9 +21,16 @@ import { requireAuth, requireRole, requirePermission } from "../middleware/auth"
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextVoucherNo } from "../lib/docNo";
-import { resolveUnderFilesDir } from "../lib/paths";
-import { uploadStaffPhoto, uploadStaffSignature, photoContentType } from "../lib/upload";
-
+import {
+  uploadStaffPhoto,
+  uploadStaffSignature,
+  photoContentType,
+  staffPhotoKey,
+  staffSignatureKey,
+  saveUploadedFile,
+  deleteStoredFile,
+} from "../lib/upload";
+import { streamStoredFile } from "../lib/storage";
 // ---- Expenses (Admin, Accountant) ------------------------------------------
 export const expensesRouter = Router();
 expensesRouter.use(requireAuth, requirePermission("finance.manage"));
@@ -209,21 +215,12 @@ staffRouter.post(
     const id = Number(req.params.id);
     const existing = await staffRepository.findById(id);
     if (!existing) {
-      // Defensive: the upload middleware already 404s unknown ids before writing.
-      await fs.promises.rm(req.file.path, { force: true });
       throw new AppError(404, "not_found", "Staff not found");
     }
 
-    // Remove the previous photo file so we don't leave orphans on disk.
-    if (existing.photoPath) {
-      try {
-        await fs.promises.rm(resolveUnderFilesDir(existing.photoPath), { force: true });
-      } catch {
-        /* ignore invalid stored paths */
-      }
-    }
+    await deleteStoredFile(existing.photoPath);
 
-    const photoPath = `photos/${req.file.filename}`;
+    const photoPath = await saveUploadedFile(staffPhotoKey(existing.id, req.file), req.file);
     const staff = await staffRepository.updatePhoto(id, photoPath);
     res.json({ data: staff });
   })
@@ -238,18 +235,12 @@ staffRouter.get(
     if (!staff) throw new AppError(404, "not_found", "Staff not found");
     if (!staff.photoPath) throw new AppError(404, "not_found", "Staff has no photo");
 
-    let abs: string;
-    try {
-      abs = resolveUnderFilesDir(staff.photoPath);
-    } catch {
-      throw new AppError(404, "not_found", "Photo file missing");
-    }
-    if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Photo file missing");
-
-    res.setHeader("Content-Type", photoContentType(abs));
-    const stream = fs.createReadStream(abs);
-    stream.on("error", (err) => res.destroy(err));
-    stream.pipe(res);
+    await streamStoredFile(
+      res,
+      staff.photoPath,
+      photoContentType(staff.photoPath),
+      "Photo file missing"
+    );
   })
 );
 
@@ -265,19 +256,12 @@ staffRouter.post(
     const id = Number(req.params.id);
     const existing = await staffRepository.findById(id);
     if (!existing) {
-      await fs.promises.rm(req.file.path, { force: true });
       throw new AppError(404, "not_found", "Staff not found");
     }
 
-    if (existing.signaturePath) {
-      try {
-        await fs.promises.rm(resolveUnderFilesDir(existing.signaturePath), { force: true });
-      } catch {
-        /* ignore */
-      }
-    }
+    await deleteStoredFile(existing.signaturePath);
 
-    const signaturePath = `photos/${req.file.filename}`;
+    const signaturePath = await saveUploadedFile(staffSignatureKey(existing.id, req.file), req.file);
     const staff = await staffRepository.updateSignature(id, signaturePath);
     res.json({ data: staff });
   })
@@ -292,18 +276,7 @@ staffRouter.get(
     if (!staff) throw new AppError(404, "not_found", "Staff not found");
     if (!staff.signaturePath) throw new AppError(404, "not_found", "Staff has no signature");
 
-    let abs: string;
-    try {
-      abs = resolveUnderFilesDir(staff.signaturePath);
-    } catch {
-      throw new AppError(404, "not_found", "Signature file missing");
-    }
-    if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Signature file missing");
-
-    res.setHeader("Content-Type", "image/jpeg");
-    const stream = fs.createReadStream(abs);
-    stream.on("error", (err) => res.destroy(err));
-    stream.pipe(res);
+    await streamStoredFile(res, staff.signaturePath, "image/jpeg", "Signature file missing");
   })
 );
 

@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import { Router } from "express";
 import {
   studentCreateSchema,
@@ -13,9 +12,14 @@ import { requireAuth, requirePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { renderPdf } from "../lib/pdf";
 import { getOrgHeader } from "../lib/orgProfile";
-import { resolveUnderFilesDir } from "../lib/paths";
-import { uploadStudentPhoto, photoContentType } from "../lib/upload";
-
+import {
+  uploadStudentPhoto,
+  photoContentType,
+  studentPhotoKey,
+  saveUploadedFile,
+  deleteStoredFile,
+} from "../lib/upload";
+import { streamStoredFile } from "../lib/storage";
 export const studentsRouter = Router();
 
 studentsRouter.use(requireAuth);
@@ -193,21 +197,13 @@ studentsRouter.post(
     const id = Number(req.params.id);
     const existing = await studentRepository.findById(id);
     if (!existing) {
-      // Defensive: the upload middleware already 404s unknown ids before writing.
-      await fs.promises.rm(req.file.path, { force: true });
       throw new AppError(404, "not_found", "Student not found");
     }
 
-    // Remove the previous photo file so we don't leave orphans on disk.
-    if (existing.photoPath) {
-      try {
-        await fs.promises.rm(resolveUnderFilesDir(existing.photoPath), { force: true });
-      } catch {
-        /* ignore invalid stored paths */
-      }
-    }
+    // Remove the previous photo so we don't leave orphans in local/S3 storage.
+    await deleteStoredFile(existing.photoPath);
 
-    const photoPath = `photos/${req.file.filename}`;
+    const photoPath = await saveUploadedFile(studentPhotoKey(existing.admissionNo, req.file), req.file);
     const student = await studentRepository.updatePhoto(id, photoPath);
     res.json({ data: student });
   })
@@ -222,17 +218,11 @@ studentsRouter.get(
     if (!student) throw new AppError(404, "not_found", "Student not found");
     if (!student.photoPath) throw new AppError(404, "not_found", "Student has no photo");
 
-    let abs: string;
-    try {
-      abs = resolveUnderFilesDir(student.photoPath);
-    } catch {
-      throw new AppError(404, "not_found", "Photo file missing");
-    }
-    if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Photo file missing");
-
-    res.setHeader("Content-Type", photoContentType(abs));
-    const stream = fs.createReadStream(abs);
-    stream.on("error", (err) => res.destroy(err));
-    stream.pipe(res);
+    await streamStoredFile(
+      res,
+      student.photoPath,
+      photoContentType(student.photoPath),
+      "Photo file missing"
+    );
   })
 );

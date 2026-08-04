@@ -60,7 +60,7 @@ for the full rationale and architecture.
 ```bash
 docker compose up -d
 ```
-Creates a `postgres:16-alpine` container on port **5434** (not 5432 or 5433 —
+Creates a `postgres:18-alpine` container on port **5434** (not 5432 or 5433 —
 the EDB Windows installer commonly registers natively-installed PostgreSQL
 versions as auto-starting services on exactly those ports, e.g. PG17 on 5432
 and PG18 on 5433; a Docker container "publishing" an already-claimed host

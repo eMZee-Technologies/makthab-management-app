@@ -2,8 +2,15 @@ import { createApp } from "./app";
 import { env } from "./lib/env";
 import { logger } from "./lib/logger";
 import { ensureDataDirs } from "./lib/paths";
+import { getStorage, resolveStorageBackend } from "./lib/storage";
 
-ensureDataDirs();
+// Local backend needs on-disk directories; S3 does not.
+if (resolveStorageBackend() === "local") {
+  ensureDataDirs();
+}
+// Instantiate early so misconfigured S3 env fails at boot, not on first upload.
+getStorage();
+
 const app = createApp();
 
 const server = app.listen(env.port, () => {
