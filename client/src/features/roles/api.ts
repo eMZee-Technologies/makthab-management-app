@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/api/client';
 import type { RoleCreateInput } from '@/lib/schemas';
+import type { RolePermissions } from '@makthab/shared';
 
 export interface Role {
   id: number;
   name: string;
   permissions: string[];
+  permissionMatrix: RolePermissions;
   isSystem: boolean;
+  isFullAccess: boolean;
   createdAt?: string;
   updatedAt?: string;
 }

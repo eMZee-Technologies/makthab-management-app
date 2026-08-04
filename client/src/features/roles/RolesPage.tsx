@@ -91,12 +91,19 @@ export function RolesPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      {r.isSystem && (
-                        <Badge variant="secondary" title={t('roles.systemHint')}>
-                          <Lock className="me-1 h-3 w-3" />
-                          {t('roles.system')}
-                        </Badge>
-                      )}
+                      <div className="flex flex-wrap gap-1">
+                        {r.isSystem && (
+                          <Badge variant="secondary" title={t('roles.systemHint')}>
+                            <Lock className="me-1 h-3 w-3" />
+                            {t('roles.system')}
+                          </Badge>
+                        )}
+                        {r.isFullAccess && (
+                          <Badge variant="secondary" title={t('roles.fullAccessHint')}>
+                            {t('roles.fullAccess')}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">

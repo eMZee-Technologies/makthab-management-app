@@ -4,7 +4,7 @@ Implementable plan to evolve Makthab’s Roles page from coarse permission keys
 (`students.manage`, …) to a **per-resource CRUD matrix** (View / Create / Update /
 Delete), with Admin full-access by default and explicit overrides for other roles.
 
-**Status:** Design / planning (not yet implemented)  
+**Status:** Phase 1 implemented (read-only matrix + dual-read adapters); Phase 2–3 pending  
 **Related:** `packages/shared/src/schemas/role.ts`, `client/src/features/roles/*`,
 `server/src/routes/roles.ts`, `server/prisma/schema.prisma` (`Role`),
 `docs/architecture/BUILD_CONTRACT.md` §6

@@ -339,15 +339,18 @@ model OrgProfile {
 
 // Application role with an attached permission set. Replaces the former
 // hardcoded 3-value role enum: Admin can now define new roles at runtime.
-// `permissions` is a JSON-encoded array of permission-key strings (see
-// @makthab/shared PERMISSION_CATALOG). isSystem rows (Admin/Accountant/Teacher)
-// are seeded and cannot be deleted. User.role stores the role NAME (unchanged),
-// which is resolved to a permission set at login.
+// `permissions` is JSON — either a legacy permission-key string[] OR a
+// RolePermissions object (`{ mode: "all" }` / `{ mode: "matrix", ... }`);
+// see @makthab/shared adapters. isSystem rows (Admin/Accountant/Teacher) are
+// seeded and cannot be deleted. isFullAccess (Admin) locks full grants and
+// cannot be cleared. User.role stores the role NAME (unchanged), resolved to
+// a permission set at login.
 model Role {
-  id          Int      @id @default(autoincrement())
-  name        String   @unique
-  permissions String // JSON-encoded string[] of permission keys
-  isSystem    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  permissions  String // JSON: legacy string[] OR RolePermissions object
+  isSystem     Boolean  @default(false)
+  isFullAccess Boolean  @default(false) // Admin lock — always all permissions
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
