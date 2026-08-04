@@ -261,6 +261,73 @@ describeApi("roles permission matrix (Phase 3)", () => {
     await request(app()).delete(`${API}/roles/${role.body.data.id}`).set(bearer(adminToken));
   });
 
+  it("finance view-only can GET expenses but cannot POST/PATCH/DELETE", async () => {
+    const adminToken = await login(CREDS.admin.username, CREDS.admin.password);
+    const resources = emptyResourceMatrix();
+    resources.dashboard = { view: true, create: false, update: false, delete: false };
+    resources.finance = { view: true, create: false, update: false, delete: false };
+    const roleName = `FinanceView ${Date.now()}`;
+    const role = await request(app())
+      .post(`${API}/roles`)
+      .set(bearer(adminToken))
+      .send({
+        name: roleName,
+        inheritsFromAdmin: false,
+        permissionMatrix: { mode: "matrix", inheritsFromAdmin: false, resources },
+      });
+    expect(role.status).toBe(201);
+
+    const username = `finview_${Date.now()}`;
+    const user = await request(app())
+      .post(`${API}/users`)
+      .set(bearer(adminToken))
+      .send({
+        fullName: "Finance Viewer",
+        username,
+        password: "Finance1a",
+        email: `${username}@example.com`,
+        contactNo: "9990003333",
+        whatsappNo: "9990003333",
+        role: roleName,
+      });
+    expect(user.status).toBe(201);
+
+    const loginRes = await request(app())
+      .post(`${API}/auth/login`)
+      .send({ username, password: "Finance1a" });
+    expect(loginRes.status).toBe(200);
+    const token = loginRes.body.data.accessToken as string;
+
+    const list = await request(app()).get(`${API}/expenses`).set(bearer(token));
+    expect([200, 400]).toContain(list.status);
+
+    const create = await request(app())
+      .post(`${API}/expenses`)
+      .set(bearer(token))
+      .send({});
+    expect(create.status).toBe(403);
+
+    const patch = await request(app())
+      .patch(`${API}/expenses/1`)
+      .set(bearer(token))
+      .send({});
+    expect(patch.status).toBe(403);
+
+    const del = await request(app())
+      .delete(`${API}/expenses/1`)
+      .set(bearer(token));
+    expect(del.status).toBe(403);
+
+    const staffCreate = await request(app())
+      .post(`${API}/staff`)
+      .set(bearer(token))
+      .send({});
+    expect(staffCreate.status).toBe(403);
+
+    await request(app()).delete(`${API}/users/${user.body.data.id}`).set(bearer(adminToken));
+    await request(app()).delete(`${API}/roles/${role.body.data.id}`).set(bearer(adminToken));
+  });
+
   it("can() helper grants Admin all and Teacher attendance only", () => {
     expect(can({ mode: "all" }, "fees", "delete")).toBe(true);
     const teacher = normalizeRolePermissions({

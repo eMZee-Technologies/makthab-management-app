@@ -8,13 +8,13 @@ import {
 import { attendanceRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireResourceAny } from "../middleware/auth";
+import { requireAuth, requireResourcePermission, requireResourceReadOrMutate } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 
 export const attendanceRouter = Router();
 
-attendanceRouter.use(requireAuth, requireResourceAny("attendance", ["view", "create", "update"]));
+attendanceRouter.use(requireAuth, requireResourceReadOrMutate("attendance"));
 
 // Build a Prisma date-range filter for a month/year or a single date.
 function dateFilter(q: AttendanceListQuery): { gte: Date; lt: Date } | undefined {
@@ -36,6 +36,7 @@ function dateFilter(q: AttendanceListQuery): { gte: Date; lt: Date } | undefined
 // POST /attendance — single record or a bulk array; upsert on (studentId, date).
 attendanceRouter.post(
   "/",
+  requireResourcePermission("attendance", "create"),
   validateBody(attendanceBulkSchema),
   asyncHandler(async (req, res) => {
     const body = req.body as typeof attendanceBulkSchema._output;
@@ -140,6 +141,7 @@ attendanceRouter.get(
 // PATCH /attendance/:id — correct a record.
 attendanceRouter.patch(
   "/:id",
+  requireResourcePermission("attendance", "update"),
   validateBody(attendanceUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);

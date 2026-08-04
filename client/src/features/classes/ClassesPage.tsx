@@ -36,7 +36,10 @@ export function ClassesPage() {
   const { data: staff } = useStaff({ limit: 200 });
   const del = useDeleteClass();
 
-  const canManage = can('classes', 'create') || can('classes', 'update') || can('classes', 'delete');
+  const canCreate = can('classes', 'create');
+  const canUpdate = can('classes', 'update');
+  const canDelete = can('classes', 'delete');
+  const canAct = canUpdate || canDelete;
 
   const { sort, toggle } = useSort({ sortBy: 'name', sortOrder: 'asc' });
   const [page, setPage] = useState(1);
@@ -93,7 +96,7 @@ export function ClassesPage() {
         </TabsList>
 
         <TabsContent value="classes" className="space-y-4">
-          {canManage && (
+          {canCreate && (
             <div className="flex justify-end">
               <Button onClick={openCreate}>
                 <Plus className="h-4 w-4" />
@@ -121,7 +124,7 @@ export function ClassesPage() {
                         {t('classes.teacher')}
                       </SortableTableHead>
                       <TableHead>{t('classes.categories')}</TableHead>
-                      <TableHead className="text-end">{t('common.actions')}</TableHead>
+                      {canAct && <TableHead className="text-end">{t('common.actions')}</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -134,10 +137,10 @@ export function ClassesPage() {
                             ? c.categories.map((cat) => cat.name).join(', ')
                             : '—'}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex justify-end gap-1">
-                            {canManage && (
-                              <>
+                        {canAct && (
+                          <TableCell>
+                            <div className="flex justify-end gap-1">
+                              {canUpdate && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -146,6 +149,8 @@ export function ClassesPage() {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
+                              )}
+                              {canDelete && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
@@ -155,10 +160,10 @@ export function ClassesPage() {
                                 >
                                   <Trash2 className="h-4 w-4 text-destructive" />
                                 </Button>
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>

@@ -3,18 +3,19 @@ import { categoryCreateSchema, categoryUpdateSchema } from "@makthab/shared";
 import { categoryRepository, classRepository, studentRepository, feeStructureRepository, isUniqueConstraintError } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
-import { requireAuth, requireResourceAny } from "../middleware/auth";
+import { requireAuth, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 
 // Global category master list (e.g. Noorani Qaida, Naazira Quran, Hifz
 // Quran). Reads live at GET /reference/categories (any authed role); writes
-// here are gated by classes.manage since categories only matter in the
-// context of what a class offers.
+// here are gated by classes create/update/delete since categories only matter
+// in the context of what a class offers.
 export const categoriesRouter = Router();
-categoriesRouter.use(requireAuth, requireResourceAny("classes", ["create", "update", "delete"]));
+categoriesRouter.use(requireAuth);
 
 categoriesRouter.post(
   "/",
+  requireResourcePermission("classes", "create"),
   validateBody(categoryCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof categoryCreateSchema._output;
@@ -32,6 +33,7 @@ categoriesRouter.post(
 
 categoriesRouter.patch(
   "/:id",
+  requireResourcePermission("classes", "update"),
   validateBody(categoryUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -54,6 +56,7 @@ categoriesRouter.patch(
 // student/fee-structure references it.
 categoriesRouter.delete(
   "/:id",
+  requireResourcePermission("classes", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const exists = await categoryRepository.findById(id);

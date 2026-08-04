@@ -16,6 +16,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { useToast } from '@/components/ui/use-toast';
 import { toDateInput, monthName } from '@/lib/format';
 import { extractApiError } from '@/api/client';
+import { useCan } from '@/lib/permissions';
 import { useCategories, useClasses } from '@/api/reference';
 import { useStudents } from '@/features/students/api';
 import { useAttendanceSummary, useLowAlert, useMarkAttendance, type MarkRecord } from './api';
@@ -27,6 +28,8 @@ const now = new Date();
 function MarkTab() {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const can = useCan();
+  const canCreate = can('attendance', 'create');
   const { data: classes = [] } = useClasses();
   const [classId, setClassId] = useState<number | undefined>();
   const [date, setDate] = useState(toDateInput(now));
@@ -72,10 +75,12 @@ function MarkTab() {
             </Select>
           </div>
           <Input type="date" className="w-44" value={date} onChange={(e) => setDate(e.target.value)} />
-          <Button onClick={save} disabled={mark.isPending || students.length === 0} className="ms-auto">
-            {mark.isPending ? <Spinner className="me-2" /> : <Save className="h-4 w-4" />}
-            {t('attendance.mark')}
-          </Button>
+          {canCreate && (
+            <Button onClick={save} disabled={mark.isPending || students.length === 0} className="ms-auto">
+              {mark.isPending ? <Spinner className="me-2" /> : <Save className="h-4 w-4" />}
+              {t('attendance.mark')}
+            </Button>
+          )}
         </div>
 
         {!classId ? (
@@ -102,6 +107,7 @@ function MarkTab() {
                     <Select
                       value={marks[s.id] ?? 'present'}
                       onValueChange={(v) => setMarks((m) => ({ ...m, [s.id]: v as Status }))}
+                      disabled={!canCreate}
                     >
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -290,16 +296,20 @@ function LowAlertTab() {
 
 export function AttendancePage() {
   const { t } = useTranslation();
+  const can = useCan();
+  const canCreate = can('attendance', 'create');
   return (
     <>
       <PageHeader title={t('attendance.title')} />
-      <Tabs defaultValue="mark">
+      <Tabs defaultValue={canCreate ? 'mark' : 'summary'}>
         <TabsList>
-          <TabsTrigger value="mark">{t('attendance.mark')}</TabsTrigger>
+          {canCreate && <TabsTrigger value="mark">{t('attendance.mark')}</TabsTrigger>}
           <TabsTrigger value="summary">{t('attendance.summary')}</TabsTrigger>
           <TabsTrigger value="low">{t('attendance.lowAlert')}</TabsTrigger>
         </TabsList>
-        <TabsContent value="mark"><MarkTab /></TabsContent>
+        {canCreate && (
+          <TabsContent value="mark"><MarkTab /></TabsContent>
+        )}
         <TabsContent value="summary"><SummaryTab /></TabsContent>
         <TabsContent value="low"><LowAlertTab /></TabsContent>
       </Tabs>

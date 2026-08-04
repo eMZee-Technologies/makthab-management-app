@@ -112,18 +112,32 @@ export function requireResourceAny(resource: ResourceKey, actions: Action[]) {
  * Module access for write methods; for GET/HEAD also allow `reports.view`.
  * The Reports page reuses fees/finance list APIs for on-screen tables, so a
  * reports-only role must be able to read those endpoints without fees/finance
- * grants. Writes still require the module resource.
+ * grants. Writes require create/update/delete — view alone is never enough.
+ * Exact write action is still enforced per-route where configured.
  */
 export function requireModuleAccessOrReportsView(resource: ResourceKey) {
-  const moduleActions: Action[] = ["view", "create", "update", "delete"];
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {
       throw new AppError(401, "unauthorized", "Authentication required");
     }
     const held = heldMatrix(req);
-    const hasModule = moduleActions.some((action) => can(held, resource, action));
     const isRead = req.method === "GET" || req.method === "HEAD";
-    if (hasModule || (isRead && can(held, "reports", "view"))) {
+    const hasView =
+      can(held, resource, "view") ||
+      can(held, resource, "create") ||
+      can(held, resource, "update") ||
+      can(held, resource, "delete");
+    const hasWrite =
+      can(held, resource, "create") ||
+      can(held, resource, "update") ||
+      can(held, resource, "delete");
+
+    if (isRead) {
+      if (hasView || can(held, "reports", "view")) {
+        next();
+        return;
+      }
+    } else if (hasWrite) {
       next();
       return;
     }
@@ -132,19 +146,54 @@ export function requireModuleAccessOrReportsView(resource: ResourceKey) {
 }
 
 /**
- * Dual-read guard for legacy permission keys. Maps each key through
- * LEGACY_KEY_GRANTS onto the JWT matrix (OR across keys). Prefer
- * requireResourcePermission for new code.
+ * Router-level gate: GET/HEAD needs view (or any write); mutating methods need
+ * create/update/delete. Use with per-route requireResourcePermission for the
+ * exact action when possible.
  */
-export function requirePermission(...keys: string[]) {
+export function requireResourceReadOrMutate(resource: ResourceKey) {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) {
       throw new AppError(401, "unauthorized", "Authentication required");
     }
-    const held = heldMatrix(req) ?? req.user.permissions;
-    if (!keys.some((k) => allowsLegacyPermission(held, k))) {
-      throw new AppError(403, "forbidden", "Insufficient permissions for this action");
+    const held = heldMatrix(req);
+    const isRead = req.method === "GET" || req.method === "HEAD";
+    if (isRead) {
+      if (
+        can(held, resource, "view") ||
+        can(held, resource, "create") ||
+        can(held, resource, "update") ||
+        can(held, resource, "delete")
+      ) {
+        next();
+        return;
+      }
+    } else if (
+      can(held, resource, "create") ||
+      can(held, resource, "update") ||
+      can(held, resource, "delete")
+    ) {
+      next();
+      return;
     }
-    next();
+    throw new AppError(403, "forbidden", "Insufficient permissions for this action");
+  };
+}
+
+/** Legacy string-key gate (Admin bypass via isFullAccess / full matrix). */
+export function requirePermission(...keys: string[]) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      throw new AppError(401, "unauthorized", "Authentication required");
+    }
+    if (req.user.isFullAccess) {
+      next();
+      return;
+    }
+    const held = new Set(req.user.permissions ?? []);
+    if (keys.some((k) => held.has(k))) {
+      next();
+      return;
+    }
+    throw new AppError(403, "forbidden", "Insufficient permissions for this action");
   };
 }

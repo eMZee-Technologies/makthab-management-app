@@ -17,12 +17,18 @@ import { LoadingRows, ErrorState, EmptyState } from '@/components/QueryState';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/ui/use-toast';
 import { extractApiError } from '@/api/client';
+import { useCan } from '@/lib/permissions';
 import { useRoles, useDeleteRole, type Role } from './api';
 import { RoleForm } from './RoleForm';
 
 export function RolesPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const can = useCan();
+  const canCreate = can('roles', 'create');
+  const canUpdate = can('roles', 'update');
+  const canDelete = can('roles', 'delete');
+  const canAct = canUpdate || canDelete;
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Role | null>(null);
   const [deleting, setDeleting] = useState<Role | null>(null);
@@ -56,10 +62,12 @@ export function RolesPage() {
       <PageHeader
         title={t('roles.title')}
         actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            {t('roles.add')}
-          </Button>
+          canCreate && (
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              {t('roles.add')}
+            </Button>
+          )
         }
       />
 
@@ -79,7 +87,7 @@ export function RolesPage() {
                   <TableHead>{t('roles.permissions')}</TableHead>
                   <TableHead>{t('roles.assignedUsers')}</TableHead>
                   <TableHead className="w-24">{t('common.status')}</TableHead>
-                  <TableHead className="text-end">{t('common.actions')}</TableHead>
+                  {canAct && <TableHead className="text-end">{t('common.actions')}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -109,17 +117,20 @@ export function RolesPage() {
                         )}
                       </div>
                     </TableCell>
+                    {canAct && (
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title={t('common.edit')}
-                          onClick={() => openEdit(r)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        {!r.isSystem && (
+                        {canUpdate && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={t('common.edit')}
+                            onClick={() => openEdit(r)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && !r.isSystem && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -131,6 +142,7 @@ export function RolesPage() {
                         )}
                       </div>
                     </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
