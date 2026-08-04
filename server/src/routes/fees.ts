@@ -23,6 +23,7 @@ import { buildWhatsAppLink, sendWhatsAppDocumentViaBusinessApi } from "../lib/wh
 import { env } from "../lib/env";
 import { getStorage, readStoredFile, normalizeStoredKey } from "../lib/storage";
 import { logger } from "../lib/logger";
+import { recordAuditFromRequest } from "../lib/audit/auditLog";
 export const feesRouter = Router();
 
 // Reads also allow reports.view — Reports page tables call /fees list APIs.
@@ -158,6 +159,19 @@ feesRouter.post(
 
     const pdfPath = await saveReceiptPdf(receiptNo, await receiptPdf(created));
     const fee = await feePaymentRepository.setPdfPath(created.id, pdfPath);
+
+    await recordAuditFromRequest(req, {
+      action: "create",
+      entity: "fee",
+      resourceId: fee.id,
+      outcome: "success",
+      additionalDetails: {
+        receiptNo,
+        studentId: dto.studentId,
+        feeType: dto.feeType,
+        amountPaid: dto.amountPaid,
+      },
+    });
 
     res.status(201).json({ data: fee });
   })

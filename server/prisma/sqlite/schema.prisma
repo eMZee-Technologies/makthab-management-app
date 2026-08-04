@@ -172,6 +172,7 @@ model User {
   approvalActorOf    UserApprovalAudit[]  @relation("ApprovalActor")
   notifications      AdminNotification[]
   rolePermissionAudits RolePermissionAudit[]
+  auditLogs          AuditLog[]
 }
 
 // One-time passcode challenge for signup verification and password reset.
@@ -378,4 +379,34 @@ model RolePermissionAudit {
   @@index([roleId])
   @@index([actorUserId])
   @@index([createdAt])
+}
+
+// Application-wide security / CRUD audit log (append-only from app code).
+// contentHash + prevHash form a tamper-evident chain; only the retention
+// purge job may delete rows older than AUDIT_LOG_RETENTION_MONTHS.
+model AuditLog {
+  id                String   @id // cuid — stable string ids for external refs
+  timestamp         DateTime @default(now())
+  userId            Int?
+  action            String // login | logout | create | read | update | delete | backup | purge | ...
+  entity            String // auth | student | fee | admin | role | ...
+  resourceId        String? // stringified entity id (nullable for auth failures, list reads)
+  ipAddress         String?
+  userAgent         String?
+  outcome           String // success | failure
+  additionalDetails String? // redacted JSON blob
+  contentHash       String // SHA-256 of canonical entry fields
+  prevHash          String? // previous row contentHash (genesis = null)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([timestamp])
+  @@index([userId])
+  @@index([action])
+  @@index([entity])
+  @@index([outcome])
+  @@index([entity, resourceId])
+  @@index([userId, timestamp])
+  @@index([timestamp, outcome])
+  @@index([action, timestamp])
 }

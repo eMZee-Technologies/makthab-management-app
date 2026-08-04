@@ -15,6 +15,7 @@ import { ReportsPage } from '@/features/reports/ReportsPage';
 import { UsersPage } from '@/features/users/UsersPage';
 import { OrgProfilesPage } from '@/features/org/OrgProfilesPage';
 import { RolesPage } from '@/features/roles/RolesPage';
+import { AuditLogsPage } from '@/features/audit/AuditLogsPage';
 
 export default function App() {
   return (
@@ -41,6 +42,9 @@ export default function App() {
             </Route>
             <Route element={<RequirePermission resource="roles" action="view" />}>
               <Route path="roles" element={<RolesPage />} />
+            </Route>
+            <Route element={<RequirePermission resource="admin" action="view" />}>
+              <Route path="audit-logs" element={<AuditLogsPage />} />
             </Route>
 
             <Route element={<RequirePermission resource="fees" action="view" />}>
