@@ -177,10 +177,14 @@ That means either:
 
 ```env
 DATABASE_PROVIDER=postgresql
-DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5434/makthab_dev"
 ```
 
-Note the host port is **5433** (see `docker-compose.yml`), not 5432.
+Note the host port is **5434** (see `docker-compose.yml`), not 5432 or 5433 —
+those are commonly claimed by a natively-installed Postgres service on
+Windows (the EDB installer auto-starts one per version). If you're pointing
+at a native install instead of this Docker container, use whatever port that
+service is actually listening on, not 5434.
 
 Then use the **Postgres-specific** migrate command (avoids the sqlite schema entirely):
 
@@ -197,7 +201,7 @@ Equivalent explicit command:
 
 ```powershell
 cd server
-npx cross-env DATABASE_PROVIDER=postgresql DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev" prisma migrate deploy --schema=./prisma/schema.prisma
+npx cross-env DATABASE_PROVIDER=postgresql DATABASE_URL="postgresql://postgres:postgres@localhost:5434/makthab_dev" prisma migrate deploy --schema=./prisma/schema.prisma
 ```
 
 ## Branch & PR checklist
