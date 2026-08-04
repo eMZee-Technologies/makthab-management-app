@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import {
@@ -18,19 +17,28 @@ import {
 import { expenseRepository, expenseCategoryRepository, staffRepository, userRepository, salaryPaymentRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireRole, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourcePermission, requireResourceAny, requireModuleAccessOrReportsView, requireResourceReadOrMutate } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextVoucherNo } from "../lib/docNo";
-import { resolveUnderFilesDir } from "../lib/paths";
-import { uploadStaffPhoto, uploadStaffSignature, photoContentType } from "../lib/upload";
-
+import {
+  uploadStaffPhoto,
+  uploadStaffSignature,
+  photoContentType,
+  staffPhotoKey,
+  staffSignatureKey,
+  saveUploadedFile,
+  deleteStoredFile,
+} from "../lib/upload";
+import { streamStoredFile } from "../lib/storage";
 // ---- Expenses (Admin, Accountant) ------------------------------------------
 export const expensesRouter = Router();
-expensesRouter.use(requireAuth, requirePermission("finance.manage"));
+// Reads also allow reports.view — Reports expense tab lists via /expenses.
+expensesRouter.use(requireAuth, requireModuleAccessOrReportsView("finance"));
 
 expensesRouter.post(
   "/",
+  requireResourcePermission("finance", "create"),
   validateBody(expenseCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof expenseCreateSchema._output;
@@ -51,11 +59,10 @@ expensesRouter.post(
   })
 );
 
-// PATCH /expenses/:id — edit an entry (Admin only). amount is re-derived from
-// the effective cost * quantity; a client-sent amount is never trusted.
+// PATCH /expenses/:id — edit an entry (requires finance.update).
 expensesRouter.patch(
   "/:id",
-  requireRole("Admin"),
+  requireResourcePermission("finance", "update"),
   validateBody(expenseUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -84,10 +91,10 @@ expensesRouter.patch(
   })
 );
 
-// DELETE /expenses/:id — hard delete (Admin only). No model FKs onto Expense.
+// DELETE /expenses/:id — hard delete (requires finance.delete).
 expensesRouter.delete(
   "/:id",
-  requireRole("Admin"),
+  requireResourcePermission("finance", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await expenseRepository.findById(id);
@@ -127,7 +134,7 @@ expensesRouter.get(
 
 // ---- Staff (Admin, Accountant) ---------------------------------------------
 export const staffRouter = Router();
-staffRouter.use(requireAuth, requirePermission("finance.manage"));
+staffRouter.use(requireAuth, requireResourceReadOrMutate("finance"));
 
 staffRouter.get(
   "/",
@@ -141,7 +148,7 @@ staffRouter.get(
 
 staffRouter.post(
   "/",
-  requireRole("Admin"),
+  requireResourcePermission("finance", "create"),
   validateBody(staffCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof staffCreateSchema._output;
@@ -172,6 +179,7 @@ staffRouter.post(
 // Students page, which is Admin-only). Login provisioning is not edited here.
 staffRouter.patch(
   "/:id",
+  requireResourcePermission("finance", "update"),
   validateBody(staffUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -189,6 +197,7 @@ staffRouter.patch(
 // (double-click, retry) should succeed quietly rather than surface an error.
 staffRouter.delete(
   "/:id",
+  requireResourcePermission("finance", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await staffRepository.findById(id);
@@ -201,6 +210,7 @@ staffRouter.delete(
 // POST /staff/:id/photo — upload/replace the staff photo.
 staffRouter.post(
   "/:id/photo",
+  requireResourcePermission("finance", "update"),
   uploadStaffPhoto,
   asyncHandler(async (req, res) => {
     if (!req.file) {
@@ -209,21 +219,12 @@ staffRouter.post(
     const id = Number(req.params.id);
     const existing = await staffRepository.findById(id);
     if (!existing) {
-      // Defensive: the upload middleware already 404s unknown ids before writing.
-      await fs.promises.rm(req.file.path, { force: true });
       throw new AppError(404, "not_found", "Staff not found");
     }
 
-    // Remove the previous photo file so we don't leave orphans on disk.
-    if (existing.photoPath) {
-      try {
-        await fs.promises.rm(resolveUnderFilesDir(existing.photoPath), { force: true });
-      } catch {
-        /* ignore invalid stored paths */
-      }
-    }
+    await deleteStoredFile(existing.photoPath);
 
-    const photoPath = `photos/${req.file.filename}`;
+    const photoPath = await saveUploadedFile(staffPhotoKey(existing.id, req.file), req.file);
     const staff = await staffRepository.updatePhoto(id, photoPath);
     res.json({ data: staff });
   })
@@ -238,18 +239,12 @@ staffRouter.get(
     if (!staff) throw new AppError(404, "not_found", "Staff not found");
     if (!staff.photoPath) throw new AppError(404, "not_found", "Staff has no photo");
 
-    let abs: string;
-    try {
-      abs = resolveUnderFilesDir(staff.photoPath);
-    } catch {
-      throw new AppError(404, "not_found", "Photo file missing");
-    }
-    if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Photo file missing");
-
-    res.setHeader("Content-Type", photoContentType(abs));
-    const stream = fs.createReadStream(abs);
-    stream.on("error", (err) => res.destroy(err));
-    stream.pipe(res);
+    await streamStoredFile(
+      res,
+      staff.photoPath,
+      photoContentType(staff.photoPath),
+      "Photo file missing"
+    );
   })
 );
 
@@ -257,6 +252,7 @@ staffRouter.get(
 // image (JPEG only — stamped onto fee receipts, see lib/pdf.ts).
 staffRouter.post(
   "/:id/signature",
+  requireResourcePermission("finance", "update"),
   uploadStaffSignature,
   asyncHandler(async (req, res) => {
     if (!req.file) {
@@ -265,19 +261,12 @@ staffRouter.post(
     const id = Number(req.params.id);
     const existing = await staffRepository.findById(id);
     if (!existing) {
-      await fs.promises.rm(req.file.path, { force: true });
       throw new AppError(404, "not_found", "Staff not found");
     }
 
-    if (existing.signaturePath) {
-      try {
-        await fs.promises.rm(resolveUnderFilesDir(existing.signaturePath), { force: true });
-      } catch {
-        /* ignore */
-      }
-    }
+    await deleteStoredFile(existing.signaturePath);
 
-    const signaturePath = `photos/${req.file.filename}`;
+    const signaturePath = await saveUploadedFile(staffSignatureKey(existing.id, req.file), req.file);
     const staff = await staffRepository.updateSignature(id, signaturePath);
     res.json({ data: staff });
   })
@@ -292,24 +281,14 @@ staffRouter.get(
     if (!staff) throw new AppError(404, "not_found", "Staff not found");
     if (!staff.signaturePath) throw new AppError(404, "not_found", "Staff has no signature");
 
-    let abs: string;
-    try {
-      abs = resolveUnderFilesDir(staff.signaturePath);
-    } catch {
-      throw new AppError(404, "not_found", "Signature file missing");
-    }
-    if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Signature file missing");
-
-    res.setHeader("Content-Type", "image/jpeg");
-    const stream = fs.createReadStream(abs);
-    stream.on("error", (err) => res.destroy(err));
-    stream.pipe(res);
+    await streamStoredFile(res, staff.signaturePath, "image/jpeg", "Signature file missing");
   })
 );
 
 // ---- Salaries (Admin, Accountant) ------------------------------------------
 export const salariesRouter = Router();
-salariesRouter.use(requireAuth, requirePermission("finance.manage"));
+// Reads also allow reports.view — Reports salaries tab lists via /salaries.
+salariesRouter.use(requireAuth, requireModuleAccessOrReportsView("finance"));
 
 salariesRouter.get(
   "/",
@@ -325,6 +304,7 @@ salariesRouter.get(
 // server-side as max(0, gross - deductions); a client-sent value is never trusted.
 salariesRouter.post(
   "/",
+  requireResourcePermission("finance", "create"),
   validateBody(salaryPaymentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof salaryPaymentCreateSchema._output;
@@ -356,6 +336,7 @@ salariesRouter.post(
 // re-derived from the effective gross/deductions; a client-sent net is ignored.
 salariesRouter.patch(
   "/:id",
+  requireResourcePermission("finance", "update"),
   validateBody(salaryPaymentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -387,6 +368,7 @@ salariesRouter.patch(
 // DELETE /salaries/:id — hard delete (Admin + Accountant). No model FKs onto it.
 salariesRouter.delete(
   "/:id",
+  requireResourcePermission("finance", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await salaryPaymentRepository.findById(id);

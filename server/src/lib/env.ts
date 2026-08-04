@@ -52,6 +52,18 @@ export function resolveJwtSecret(
   return devFallback;
 }
 
+const STORAGE_BACKENDS = ["local", "s3"] as const;
+type StorageBackend = (typeof STORAGE_BACKENDS)[number];
+
+function storageBackend(): StorageBackend | undefined {
+  const v = process.env.STORAGE_BACKEND;
+  if (v === undefined || v === "") return undefined;
+  if (!(STORAGE_BACKENDS as readonly string[]).includes(v)) {
+    throw new Error(`Invalid STORAGE_BACKEND: "${v}" (expected "local" or "s3")`);
+  }
+  return v as StorageBackend;
+}
+
 const nodeEnv = process.env.NODE_ENV ?? "development";
 
 export const env = {
@@ -89,10 +101,22 @@ export const env = {
   loginLockoutMinutes: Number(process.env.LOGIN_LOCKOUT_MINUTES ?? 15),
   // Default role assigned on self-signup (admin may override on approve).
   signupDefaultRole: process.env.SIGNUP_DEFAULT_ROLE ?? "Teacher",
-  // Object storage: "local" (data/files) or "s3" (Fargate / AWS).
-  fileStorage: (process.env.FILE_STORAGE ?? "local").toLowerCase() === "s3" ? "s3" : "local",
-  s3FilesBucket: process.env.S3_FILES_BUCKET || undefined,
-  awsRegion: process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? "us-east-1",
+  // File storage: omit STORAGE_BACKEND to auto-select (s3 in production, local otherwise).
+  storageBackend: storageBackend(),
+  localUploadPath: process.env.LOCAL_UPLOAD_PATH || undefined,
+  s3Bucket: process.env.S3_BUCKET || undefined,
+  awsRegion: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || undefined,
+  awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID || undefined,
+  awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || undefined,
+  /** Months to retain AuditLog rows before the purge job deletes them. */
+  auditLogRetentionMonths: Math.max(1, Number(process.env.AUDIT_LOG_RETENTION_MONTHS ?? 12)),
+  /** Warn when this many audit rows are written within a rolling 60s window. */
+  auditLogVolumeWarnPerMinute: Math.max(
+    10,
+    Number(process.env.AUDIT_LOG_VOLUME_WARN_PER_MINUTE ?? 200)
+  ),
+  /** Cron expression for the retention purge (default: daily 03:15). */
+  auditLogPurgeCron: process.env.AUDIT_LOG_PURGE_CRON ?? "15 3 * * *",
 };
 
 export const isProd = env.nodeEnv === "production";

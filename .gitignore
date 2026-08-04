@@ -119,3 +119,8 @@ Desktop.ini
 *.tfvars
 !*.tfvars.example
 .terraform.lock.hcl
+
+# --- Database backups -------------------------------------------------------
+# Produced by scripts/db/backup-postgres.ps1 — contains real student/finance
+# data, never commit.
+/backups/

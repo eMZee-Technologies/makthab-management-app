@@ -16,6 +16,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/ui/use-toast';
 import { useCategories, useDeleteCategory } from '@/api/reference';
 import { extractApiError } from '@/api/client';
+import { useCan } from '@/lib/permissions';
 import { CategoryForm } from './CategoryForm';
 import type { Category } from '@/types/domain';
 
@@ -25,6 +26,11 @@ import type { Category } from '@/types/domain';
 export function CategoriesTab() {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const can = useCan();
+  const canCreate = can('classes', 'create');
+  const canUpdate = can('classes', 'update');
+  const canDelete = can('classes', 'delete');
+  const canAct = canUpdate || canDelete;
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Category | null>(null);
   const [deleting, setDeleting] = useState<Category | null>(null);
@@ -55,12 +61,14 @@ export function CategoriesTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4" />
-          {t('classes.addCategory')}
-        </Button>
-      </div>
+      {canCreate && (
+        <div className="flex justify-end">
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            {t('classes.addCategory')}
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardContent className="space-y-4 pt-6">
@@ -75,33 +83,39 @@ export function CategoriesTab() {
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('classes.categoryName')}</TableHead>
-                  <TableHead className="text-end">{t('common.actions')}</TableHead>
+                  {canAct && <TableHead className="text-end">{t('common.actions')}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{c.name}</TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title={t('common.edit')}
-                          onClick={() => openEdit(c)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title={t('common.delete')}
-                          onClick={() => setDeleting(c)}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
+                    {canAct && (
+                      <TableCell>
+                        <div className="flex justify-end gap-1">
+                          {canUpdate && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title={t('common.edit')}
+                              onClick={() => openEdit(c)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canDelete && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              title={t('common.delete')}
+                              onClick={() => setDeleting(c)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

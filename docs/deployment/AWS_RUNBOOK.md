@@ -17,7 +17,7 @@ and [`infra/terraform/README.md`](../../infra/terraform/README.md).
 |---|---|
 | `DATABASE_URL` | Secrets Manager → ECS task `secrets` |
 | `JWT_SECRET` / `JWT_REFRESH_SECRET` | Secrets Manager → ECS task `secrets` |
-| `S3_FILES_BUCKET` / `FILE_STORAGE=s3` | ECS task environment (Terraform) |
+| `S3_BUCKET` / `STORAGE_BACKEND=s3` | ECS task environment (Terraform) |
 
 Never bake secrets into the Docker image or commit `.tfvars` with real passwords.
 
@@ -75,8 +75,8 @@ subscription after `terraform apply`.
 
 | Mode | Env | Behaviour |
 |---|---|---|
-| Local (default) | `FILE_STORAGE=local` | Writes under `data/files/` |
-| S3 | `FILE_STORAGE=s3` + `S3_FILES_BUCKET` | Same logical keys in S3; task role needs `s3:Put/Get/Delete` |
+| Local (default) | omit `STORAGE_BACKEND` or `=local` | Writes under `data/files/` |
+| S3 | `STORAGE_BACKEND=s3` + `S3_BUCKET` | Same logical keys in S3; task role needs `s3:Put/Get/Delete` |
 
 Receipt PDFs already go through `server/src/lib/storage`. Photos/payslips/reports
 should migrate to the same adapter before scaling past one ECS task.

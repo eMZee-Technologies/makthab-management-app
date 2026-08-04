@@ -13,6 +13,7 @@ import { usersRouter } from "./users";
 import { orgProfileRouter } from "./orgProfile";
 import { rolesRouter } from "./roles";
 import { categoriesRouter } from "./categories";
+import { auditLogsRouter } from "./auditLogs";
 
 // Aggregate router for /api/v1. Every domain from doc §6 is mounted here.
 export const apiRouter = Router();
@@ -27,6 +28,7 @@ apiRouter.use("/users", usersRouter);
 apiRouter.use("/salaries", salariesRouter);
 apiRouter.use("/reports", reportsRouter);
 apiRouter.use("/dashboard", dashboardRouter);
+apiRouter.use("/admin/audit-logs", auditLogsRouter);
 apiRouter.use("/admin", adminRouter);
 apiRouter.use("/classes", classesRouter);
 apiRouter.use("/org-profile", orgProfileRouter);

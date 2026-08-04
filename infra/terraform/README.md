@@ -76,4 +76,4 @@ shaped like production.
 ## Related docs
 
 - [AWS runbook](../../docs/deployment/AWS_RUNBOOK.md) — backup/restore + smoke checklist
-- Application storage adapter: `server/src/lib/storage` (`FILE_STORAGE=local|s3`)
+- Application storage adapter: `server/src/lib/storage` (`STORAGE_BACKEND=local|s3`, `S3_BUCKET`)

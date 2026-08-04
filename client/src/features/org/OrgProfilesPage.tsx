@@ -17,6 +17,7 @@ import { LoadingRows, ErrorState, EmptyState } from '@/components/QueryState';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/ui/use-toast';
 import { extractApiError } from '@/api/client';
+import { useCan } from '@/lib/permissions';
 import {
   useOrgProfiles,
   useDeleteOrgProfile,
@@ -37,6 +38,9 @@ function OrgThumb({ profile }: { profile: OrgProfile }) {
 export function OrgProfilesPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
+  // Organisation resource only exposes view + update in the matrix.
+  const can = useCan();
+  const canUpdate = can('organisation', 'update');
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<OrgProfile | null>(null);
   const [deleting, setDeleting] = useState<OrgProfile | null>(null);
@@ -78,10 +82,12 @@ export function OrgProfilesPage() {
       <PageHeader
         title={t('org.title')}
         actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            {t('org.add')}
-          </Button>
+          canUpdate && (
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              {t('org.add')}
+            </Button>
+          )
         }
       />
 
@@ -101,7 +107,7 @@ export function OrgProfilesPage() {
                   <TableHead>{t('org.name')}</TableHead>
                   <TableHead>{t('org.address')}</TableHead>
                   <TableHead>{t('common.status')}</TableHead>
-                  <TableHead className="text-end">{t('common.actions')}</TableHead>
+                  {canUpdate && <TableHead className="text-end">{t('common.actions')}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -119,6 +125,7 @@ export function OrgProfilesPage() {
                         <Badge variant="secondary">{t('common.inactive')}</Badge>
                       )}
                     </TableCell>
+                    {canUpdate && (
                     <TableCell>
                       <div className="flex justify-end gap-1">
                         {!p.isActive && (
@@ -151,6 +158,7 @@ export function OrgProfilesPage() {
                         </Button>
                       </div>
                     </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

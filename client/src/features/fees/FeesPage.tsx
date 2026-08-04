@@ -29,7 +29,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, formatDate, monthName } from '@/lib/format';
 import { extractApiError } from '@/api/client';
 import { openWhatsApp } from '@/lib/download';
-import { useAuthStore } from '@/store/authStore';
+import { useCan } from '@/lib/permissions';
 import { defaulterUpdateSchema, type DefaulterUpdateInput } from '@/lib/schemas';
 import {
   useFees,
@@ -109,8 +109,9 @@ function PaymentsTable({
 }) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin' || role === 'Accountant';
+  const can = useCan();
+  const canUpdate = can('fees', 'update');
+  const canDelete = can('fees', 'delete');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [editing, setEditing] = useState<FeePayment | null>(null);
@@ -238,18 +239,20 @@ function PaymentsTable({
                       <Button variant="ghost" size="icon" title={t('fees.receipt')} onClick={() => receipt(f)}>
                         <FileText className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" title={t('fees.whatsapp')} onClick={() => whatsapp(f)}>
-                        <MessageCircle className="h-4 w-4 text-emerald-600" />
-                      </Button>
-                      {canManage && (
-                        <>
-                          <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => setEditing(f)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setDeleting(f)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </>
+                      {canUpdate && (
+                        <Button variant="ghost" size="icon" title={t('fees.whatsapp')} onClick={() => whatsapp(f)}>
+                          <MessageCircle className="h-4 w-4 text-emerald-600" />
+                        </Button>
+                      )}
+                      {canUpdate && (
+                        <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => setEditing(f)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setDeleting(f)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
                       )}
                     </div>
                   </TableCell>
@@ -390,8 +393,8 @@ function DefaulterEditDialog({
 
 function DefaultersTab() {
   const { t, i18n } = useTranslation();
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin' || role === 'Accountant';
+  const can = useCan();
+  const canUpdate = can('fees', 'update');
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
   const [page, setPage] = useState(1);
@@ -471,7 +474,7 @@ function DefaultersTab() {
                           <MessageCircle className="h-4 w-4 text-emerald-600" />
                         </Button>
                       )}
-                      {canManage && (
+                      {canUpdate && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -515,6 +518,8 @@ function DefaultersTab() {
 
 export function FeesPage() {
   const { t } = useTranslation();
+  const can = useCan();
+  const canCreate = can('fees', 'create');
   const [formOpen, setFormOpen] = useState(false);
 
   return (
@@ -522,10 +527,12 @@ export function FeesPage() {
       <PageHeader
         title={t('fees.title')}
         actions={
-          <Button onClick={() => setFormOpen(true)}>
-            <Plus className="h-4 w-4" />
-            {t('fees.collect')}
-          </Button>
+          canCreate && (
+            <Button onClick={() => setFormOpen(true)}>
+              <Plus className="h-4 w-4" />
+              {t('fees.collect')}
+            </Button>
+          )
         }
       />
       <Tabs defaultValue="monthly">

@@ -48,6 +48,8 @@ describeApi("fees", () => {
     });
     expect([200, 201]).toContain(r.status);
     expect(r.body.data).toHaveProperty("receiptNo");
+    // Relative storage key (local FS or S3), not an absolute disk path.
+    expect(r.body.data.pdfPath).toMatch(/^receipts\/.+\.pdf$/);
     feeId = r.body.data.id;
   });
 

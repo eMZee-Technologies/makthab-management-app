@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import { Router } from "express";
 import {
   feePaymentCreateSchema,
@@ -13,7 +12,7 @@ import {
 import { feePaymentRepository, studentRepository, feeStructureRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireModuleAccessOrReportsView, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextReceiptNo } from "../lib/docNo";
@@ -22,12 +21,13 @@ import { getOrgHeader } from "../lib/orgProfile";
 import { MONTH_NAMES, MONTH_ABBR } from "../lib/monthNames";
 import { buildWhatsAppLink, sendWhatsAppDocumentViaBusinessApi } from "../lib/whatsapp";
 import { env } from "../lib/env";
-import { resolveUnderFilesDir } from "../lib/paths";
-import { getObjectStorage, readStoredBytes, deleteStored } from "../lib/storage";
-
+import { getStorage, readStoredFile, normalizeStoredKey } from "../lib/storage";
+import { logger } from "../lib/logger";
+import { recordAuditFromRequest } from "../lib/audit/auditLog";
 export const feesRouter = Router();
 
-feesRouter.use(requireAuth, requirePermission("fees.manage"));
+// Reads also allow reports.view — Reports page tables call /fees list APIs.
+feesRouter.use(requireAuth, requireModuleAccessOrReportsView("fees"));
 
 type FeeWithStudent = Awaited<ReturnType<typeof loadFee>>;
 async function loadFee(id: number) {
@@ -37,16 +37,10 @@ async function loadFee(id: number) {
 // Load the collecting staff member's uploaded signature (if any) as an
 // EmbeddedImage ready for the PDF writer. Signatures are JPEG-only (see
 // upload.ts) so parseJpegInfo always applies here.
-function loadSignatureImage(signaturePath: string | null): EmbeddedImage | undefined {
+async function loadSignatureImage(signaturePath: string | null): Promise<EmbeddedImage | undefined> {
   if (!signaturePath) return undefined;
-  let abs: string;
-  try {
-    abs = resolveUnderFilesDir(signaturePath);
-  } catch {
-    return undefined;
-  }
-  if (!fs.existsSync(abs)) return undefined;
-  const bytes = fs.readFileSync(abs);
+  const bytes = await readStoredFile(signaturePath);
+  if (!bytes) return undefined;
   try {
     const info = parseJpegInfo(bytes);
     return { bytes, width: info.width, height: info.height, numComponents: info.numComponents };
@@ -96,7 +90,7 @@ async function receiptPdf(fee: NonNullable<FeeWithStudent>): Promise<Buffer> {
     amountPaid: fee.amountPaid,
     signature: fee.collectedBy
       ? {
-        image: loadSignatureImage(fee.collectedBy.signaturePath),
+        image: await loadSignatureImage(fee.collectedBy.signaturePath),
         staffName: fee.collectedBy.fullName,
         staffRole: fee.collectedBy.role,
       }
@@ -104,9 +98,39 @@ async function receiptPdf(fee: NonNullable<FeeWithStudent>): Promise<Buffer> {
   });
 }
 
+async function saveReceiptPdf(receiptNo: string, pdf: Buffer): Promise<string> {
+  const key = `receipts/${receiptNo}.pdf`;
+  try {
+    await getStorage().save(key, pdf, { contentType: "application/pdf" });
+    return key;
+  } catch (err) {
+    logger.error(`failed to store receipt ${key}: ${(err as Error).message}`);
+    throw new AppError(500, "storage_error", "Failed to store receipt PDF");
+  }
+}
+
+async function loadReceiptPdf(fee: NonNullable<FeeWithStudent>): Promise<Buffer> {
+  if (fee.pdfPath) {
+    const stored = await readStoredFile(fee.pdfPath);
+    if (stored) return stored;
+  }
+  return receiptPdf(fee);
+}
+
+async function deleteReceiptPdf(pdfPath: string | null): Promise<void> {
+  if (!pdfPath) return;
+  try {
+    const key = normalizeStoredKey(pdfPath);
+    await getStorage().delete(key);
+  } catch (err) {
+    logger.debug(`receipt delete skipped for ${pdfPath}: ${(err as Error).message}`);
+  }
+}
+
 // POST /fees — record a payment and generate the receipt PDF.
 feesRouter.post(
   "/",
+  requireResourcePermission("fees", "create"),
   validateBody(feePaymentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof feePaymentCreateSchema._output;
@@ -133,10 +157,21 @@ feesRouter.post(
       collectedById: actorStaffId(req),
     });
 
-    const pdfKey = `receipts/${receiptNo}.pdf`;
-    const pdfBytes = await receiptPdf(created);
-    await getObjectStorage().put(pdfKey, pdfBytes, "application/pdf");
-    const fee = await feePaymentRepository.setPdfPath(created.id, pdfKey);
+    const pdfPath = await saveReceiptPdf(receiptNo, await receiptPdf(created));
+    const fee = await feePaymentRepository.setPdfPath(created.id, pdfPath);
+
+    await recordAuditFromRequest(req, {
+      action: "create",
+      entity: "fee",
+      resourceId: fee.id,
+      outcome: "success",
+      additionalDetails: {
+        receiptNo,
+        studentId: dto.studentId,
+        feeType: dto.feeType,
+        amountPaid: dto.amountPaid,
+      },
+    });
 
     res.status(201).json({ data: fee });
   })
@@ -210,6 +245,7 @@ feesRouter.get(
 // by persisting feeOverrideAmount; returns the recomputed defaulter row.
 feesRouter.patch(
   "/defaulters/:studentId",
+  requireResourcePermission("fees", "update"),
   validateBody(defaulterUpdateSchema),
   asyncHandler(async (req, res) => {
     const studentId = Number(req.params.studentId);
@@ -234,6 +270,7 @@ feesRouter.get(
 
 feesRouter.post(
   "/structures",
+  requireResourcePermission("fees", "create"),
   validateBody(feeStructureCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof feeStructureCreateSchema._output;
@@ -252,6 +289,7 @@ feesRouter.post(
 // DELETE /fees/structures/:id — remove a fee structure entry (Admin + Accountant).
 feesRouter.delete(
   "/structures/:id",
+  requireResourcePermission("fees", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await feeStructureRepository.findById(id);
@@ -286,6 +324,7 @@ feesRouter.get(
 // (it's not part of the update schema, so there's no way to change it here).
 feesRouter.patch(
   "/:id",
+  requireResourcePermission("fees", "update"),
   validateBody(feePaymentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -319,15 +358,14 @@ feesRouter.patch(
 // remove its receipt PDF from disk.
 feesRouter.delete(
   "/:id",
+  requireResourcePermission("fees", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const fee = await feePaymentRepository.findById(id);
     if (!fee) throw new AppError(404, "not_found", "Payment not found");
 
     await feePaymentRepository.delete(id);
-    if (fee.pdfPath) {
-      await deleteStored(fee.pdfPath);
-    }
+    await deleteReceiptPdf(fee.pdfPath);
     res.json({ data: { id } });
   })
 );
@@ -338,8 +376,7 @@ feesRouter.get(
   asyncHandler(async (req, res) => {
     const fee = await loadFee(Number(req.params.id));
     if (!fee) throw new AppError(404, "not_found", "Payment not found");
-    const stored = fee.pdfPath ? await readStoredBytes(fee.pdfPath) : null;
-    const pdf = stored ?? (await receiptPdf(fee));
+    const pdf = await loadReceiptPdf(fee);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="${fee.receiptNo}.pdf"`);
     res.end(pdf);
@@ -360,6 +397,7 @@ feesRouter.get(
 //     fully automatic, no client-side download/open needed.
 feesRouter.post(
   "/:id/whatsapp",
+  requireResourcePermission("fees", "update"),
   asyncHandler(async (req, res) => {
     const fee = await loadFee(Number(req.params.id));
     if (!fee) throw new AppError(404, "not_found", "Payment not found");
@@ -375,8 +413,7 @@ feesRouter.post(
       `₹ ${fee.amountPaid.toFixed(2)}/- paid on ${formatReceiptDate(fee.paymentDate)}. JazakAllah.`;
 
     if (env.whatsappGateway === "business-api") {
-      const stored = fee.pdfPath ? await readStoredBytes(fee.pdfPath) : null;
-      const pdf = stored ?? (await receiptPdf(fee));
+      const pdf = await loadReceiptPdf(fee);
       await sendWhatsAppDocumentViaBusinessApi(fee.student.whatsappNo, pdf, `${fee.receiptNo}.pdf`, caption);
       await feePaymentRepository.markWhatsappSent(fee.id);
       res.json({ data: { mode: "business-api", whatsappSent: true } });

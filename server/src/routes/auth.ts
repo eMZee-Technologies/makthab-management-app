@@ -19,7 +19,7 @@ import {
   isUniqueConstraintError,
 } from "../db";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt";
-import { resolvePermissions } from "../lib/permissions";
+import { resolveRoleAccess } from "../lib/permissions";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
 import { AppError } from "../middleware/errorHandler";
@@ -33,6 +33,7 @@ import {
 import { issuePasswordResetToken, consumePasswordResetToken } from "../lib/auth/passwordReset";
 import { notifyAdminsByEmail } from "../lib/auth/notifier";
 import { authRateLimiter, otpRateLimiter } from "../lib/auth/rateLimit";
+import { clientMeta, recordAudit } from "../lib/audit/auditLog";
 
 export const authRouter = Router();
 
@@ -285,14 +286,41 @@ authRouter.post(
           env.loginLockoutMinutes
         );
       }
+      const meta = clientMeta(req);
+      await recordAudit({
+        userId: user?.id ?? null,
+        action: "login",
+        entity: "auth",
+        outcome: "failure",
+        additionalDetails: { username, reason: user ? "bad_password" : "unknown_user" },
+        ...meta,
+      });
       throw new AppError(401, "invalid_credentials", "Invalid username or password");
     }
 
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+      const meta = clientMeta(req);
+      await recordAudit({
+        userId: user.id,
+        action: "login",
+        entity: "auth",
+        outcome: "failure",
+        additionalDetails: { username, reason: "locked" },
+        ...meta,
+      });
       throw new AppError(423, "account_locked", "Account temporarily locked. Try again later.");
     }
 
     if (user.status !== "active") {
+      const meta = clientMeta(req);
+      await recordAudit({
+        userId: user.id,
+        action: "login",
+        entity: "auth",
+        outcome: "failure",
+        additionalDetails: { username, reason: "inactive_status", status: user.status },
+        ...meta,
+      });
       // Same envelope as bad credentials to avoid status enumeration.
       throw new AppError(401, "invalid_credentials", "Invalid username or password");
     }
@@ -300,21 +328,39 @@ authRouter.post(
     await userRepository.clearLoginFailures(user.id);
 
     const role = user.role;
-    const permissions = await resolvePermissions(role);
+    const { permissionMatrix, permissionsVersion } = await resolveRoleAccess(role);
     const accessToken = signAccessToken({
       sub: user.id,
       staffId: user.staffId,
       username: user.username,
       role,
-      permissions,
+      permissionMatrix,
+      permissionsVersion,
     });
     const refreshToken = signRefreshToken(user.id);
+
+    const meta = clientMeta(req);
+    await recordAudit({
+      userId: user.id,
+      action: "login",
+      entity: "auth",
+      outcome: "success",
+      additionalDetails: { username, role },
+      ...meta,
+    });
 
     res.json({
       data: {
         accessToken,
         refreshToken,
-        user: { id: user.id, fullName: user.staff.fullName, username: user.username, role, permissions },
+        user: {
+          id: user.id,
+          fullName: user.staff.fullName,
+          username: user.username,
+          role,
+          permissionMatrix,
+          permissionsVersion,
+        },
       },
     });
   })
@@ -338,19 +384,27 @@ authRouter.post(
       throw new AppError(401, "unauthorized", "User no longer active");
     }
     const role = user.role;
-    const permissions = await resolvePermissions(role);
+    const { permissionMatrix, permissionsVersion } = await resolveRoleAccess(role);
     const accessToken = signAccessToken({
       sub: user.id,
       staffId: user.staffId,
       username: user.username,
       role,
-      permissions,
+      permissionMatrix,
+      permissionsVersion,
     });
     res.json({
       data: {
         accessToken,
         refreshToken: signRefreshToken(user.id),
-        user: { id: user.id, fullName: user.staff.fullName, username: user.username, role, permissions },
+        user: {
+          id: user.id,
+          fullName: user.staff.fullName,
+          username: user.username,
+          role,
+          permissionMatrix,
+          permissionsVersion,
+        },
       },
     });
   })

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import bcrypt from "bcryptjs";
+import { encodeRolePermissionsForStorage } from "@makthab/shared";
 
 // Standalone CLI script (run via `tsx prisma/seed.ts`), outside the Express
 // app — resolves its own provider-appropriate client rather than going
@@ -62,12 +63,15 @@ async function main() {
   await prisma.orgProfile.updateMany({ where: { id: { not: 1 } }, data: { isActive: false } });
 
   // --- System roles + permission sets (regression-critical: these MUST
-  // reproduce the pre-permission-system route access exactly). Keys are defined
-  // in @makthab/shared PERMISSION_CATALOG; the sets below are inlined so the
-  // seed is self-contained and auditable. ---
-  const systemRoles: { name: string; permissions: string[] }[] = [
+  // reproduce the pre-permission-system route access exactly). Storage uses
+  // RolePermissions JSON (`{ mode: "all" }` for Admin; matrix for others).
+  // Legacy key sets below stay the source of truth for Accountant/Teacher and
+  // are converted via @makthab/shared adapters so JWT guards stay unchanged.
+  const systemRoles: { name: string; permissions: string[]; isFullAccess: boolean }[] = [
     {
       name: "Admin",
+      isFullAccess: true,
+      // Listed for auditability; storage uses { mode: "all" } when isFullAccess.
       permissions: [
         "students.manage",
         "classes.manage",
@@ -81,17 +85,29 @@ async function main() {
         "admin.access",
       ],
     },
-    { name: "Accountant", permissions: ["fees.manage", "finance.manage", "reports.access"] },
-    { name: "Teacher", permissions: ["attendance.mark"] },
+    {
+      name: "Accountant",
+      isFullAccess: false,
+      permissions: ["fees.manage", "finance.manage", "reports.access"],
+    },
+    { name: "Teacher", isFullAccess: false, permissions: ["attendance.mark"] },
   ];
   for (const role of systemRoles) {
+    const permissionsJson = encodeRolePermissionsForStorage(role.permissions, {
+      isFullAccess: role.isFullAccess,
+    });
     await prisma.role.upsert({
       where: { name: role.name },
-      update: { permissions: JSON.stringify(role.permissions), isSystem: true },
+      update: {
+        permissions: permissionsJson,
+        isSystem: true,
+        isFullAccess: role.isFullAccess,
+      },
       create: {
         name: role.name,
-        permissions: JSON.stringify(role.permissions),
+        permissions: permissionsJson,
         isSystem: true,
+        isFullAccess: role.isFullAccess,
       },
     });
   }

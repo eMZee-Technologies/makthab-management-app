@@ -15,7 +15,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency } from '@/lib/format';
 import { extractApiError } from '@/api/client';
-import { useAuthStore } from '@/store/authStore';
+import { useCan } from '@/lib/permissions';
 import { useClasses, useAcademicYears } from '@/api/reference';
 import { feeStructureCreateSchema, type FeeStructureCreateInput } from '@/lib/schemas';
 import { useFeeStructures, useSaveFeeStructure, useDeleteFeeStructure } from './api';
@@ -26,8 +26,9 @@ const FEE_TYPES = ['admission', 'monthly', 'annual', 'other'] as const;
 export function FeeStructures() {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin' || role === 'Accountant';
+  const can = useCan();
+  const canCreate = can('fees', 'create');
+  const canDelete = can('fees', 'delete');
   const { data: classes = [] } = useClasses();
   const { data: years = [] } = useAcademicYears();
   const { data: structures, isLoading, isError, refetch } = useFeeStructures();
@@ -91,6 +92,7 @@ export function FeeStructures() {
   return (
     <Card>
       <CardContent className="space-y-6 pt-6">
+        {canCreate && (
         <form onSubmit={onSubmit} className="grid gap-4 sm:grid-cols-4">
           <SelectField
             name="classId"
@@ -134,6 +136,7 @@ export function FeeStructures() {
             </Button>
           </div>
         </form>
+        )}
 
         {isLoading ? (
           <LoadingRows cols={5} />
@@ -149,7 +152,7 @@ export function FeeStructures() {
                 <TableHead>{t('fees.category')}</TableHead>
                 <TableHead>{t('fees.feeType')}</TableHead>
                 <TableHead className="text-end">{t('fees.amountDue')}</TableHead>
-                {canManage && <TableHead className="text-end">{t('common.actions')}</TableHead>}
+                {canDelete && <TableHead className="text-end">{t('common.actions')}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -159,7 +162,7 @@ export function FeeStructures() {
                   <TableCell>{categoryNameFor(s)}</TableCell>
                   <TableCell className="capitalize">{s.feeType}</TableCell>
                   <TableCell className="text-end">{formatCurrency(s.amount, i18n.language)}</TableCell>
-                  {canManage && (
+                  {canDelete && (
                     <TableCell>
                       <div className="flex justify-end gap-1">
                         <Button

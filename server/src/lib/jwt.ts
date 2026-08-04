@@ -1,17 +1,21 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
+import type { RolePermissions } from "@makthab/shared";
 import { env } from "./env";
 
 // Claims carried in the access token. staffId identifies the actor (Staff.id)
-// stamped on write operations. `permissions` (resolved from the user's Role at
-// login/refresh) drives access control via requirePermission; `role` is the
-// role name, kept for display and the legacy requireRole guards. role is a
-// plain string now that roles are DB-backed and admin-definable.
+// stamped on write operations. permissionMatrix (resolved from the user's Role
+// at login/refresh) drives access control via requireResourcePermission /
+// requirePermission. permissionsVersion rejects stale tokens after shrinks.
+// `role` is the role name (display + legacy requireRole).
 export interface AccessTokenPayload {
   sub: number; // User.id
   staffId: number;
   username: string;
   role: string;
-  permissions: string[];
+  permissionMatrix: RolePermissions;
+  permissionsVersion: number;
+  /** @deprecated dual-read for in-flight Phase 1/2 tokens during rollout */
+  permissions?: string[];
 }
 
 export interface RefreshTokenPayload {

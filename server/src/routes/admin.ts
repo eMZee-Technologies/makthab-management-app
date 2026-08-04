@@ -2,14 +2,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { Router } from "express";
 import { asyncHandler } from "../lib/asyncHandler";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourceAny } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { env } from "../lib/env";
 import { DATA_DIR, BACKUPS_DIR, ensureDir } from "../lib/paths";
+import { recordAuditFromRequest } from "../lib/audit/auditLog";
 
 // Admin-only maintenance endpoints (doc §13.3).
 export const adminRouter = Router();
-adminRouter.use(requireAuth, requirePermission("admin.access"));
+adminRouter.use(requireAuth, requireResourceAny("admin", ["view", "create"]));
 
 /**
  * Resolve the on-disk SQLite file from DATABASE_URL. Prisma resolves
@@ -29,7 +30,7 @@ function resolveSqliteDatabaseFile(): string | null {
 // PostgreSQL deployments should use managed DB snapshots instead.
 adminRouter.post(
   "/backup",
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     if (env.databaseProvider !== "sqlite") {
       throw new AppError(
         400,
@@ -44,6 +45,12 @@ adminRouter.post(
     const filename = `backup-${ts}.db`;
     const dest = path.join(ensureDir(BACKUPS_DIR), filename);
     fs.copyFileSync(dbPath, dest);
+    await recordAuditFromRequest(req, {
+      action: "backup",
+      entity: "admin",
+      outcome: "success",
+      additionalDetails: { filename },
+    });
     // Return the backup filename only — not an absolute server path.
     res.status(201).json({ data: { filename, createdAt: new Date().toISOString() } });
   })

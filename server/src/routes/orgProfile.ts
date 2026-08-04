@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import { Router } from "express";
 import {
   orgProfileCreateSchema,
@@ -10,11 +9,16 @@ import {
 import { orgProfileRepository, type OrgProfile } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
-import { uploadOrgImage, photoContentType } from "../lib/upload";
-import { resolveUnderFilesDir } from "../lib/paths";
-
+import {
+  uploadOrgImage,
+  photoContentType,
+  orgImageKey,
+  saveUploadedFile,
+  deleteStoredFile,
+} from "../lib/upload";
+import { streamStoredFile } from "../lib/storage";
 // Institution profiles (letterhead). The single active row is what renders in
 // the app header and on generated PDF/XLSX reports. Reads of the active profile
 // and its image are open to any authenticated user (the header needs them);
@@ -42,10 +46,10 @@ orgProfileRouter.get(
   })
 );
 
-// GET /org-profile — list all profiles (Admin / org.manage).
+// GET /org-profile — list all profiles.
 orgProfileRouter.get(
   "/",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "view"),
   validateQuery(orgProfileListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as OrgProfileListQuery;
@@ -58,7 +62,7 @@ orgProfileRouter.get(
 // POST /org-profile — create a new profile (inactive by default).
 orgProfileRouter.post(
   "/",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "update"),
   validateBody(orgProfileCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof orgProfileCreateSchema._output;
@@ -73,7 +77,7 @@ orgProfileRouter.post(
 // lowest-id row / a constant if that leaves none active).
 orgProfileRouter.patch(
   "/:id",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "update"),
   validateBody(orgProfileUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -90,7 +94,7 @@ orgProfileRouter.patch(
 // activate another first so there's always a letterhead to fall back to.
 orgProfileRouter.delete(
   "/:id",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "update"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await orgProfileRepository.findById(id);
@@ -99,11 +103,7 @@ orgProfileRouter.delete(
       throw new AppError(400, "active_profile", "Cannot delete the active profile; activate another first");
     }
     if (existing.headerImagePath) {
-      try {
-        await fs.promises.rm(resolveUnderFilesDir(existing.headerImagePath), { force: true });
-      } catch {
-        /* ignore */
-      }
+      await deleteStoredFile(existing.headerImagePath);
     }
     await orgProfileRepository.delete(id);
     res.json({ data: { id } });
@@ -113,7 +113,7 @@ orgProfileRouter.delete(
 // POST /org-profile/:id/image — upload/replace the header background image.
 orgProfileRouter.post(
   "/:id/image",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "update"),
   uploadOrgImage,
   asyncHandler(async (req, res) => {
     if (!req.file) {
@@ -122,17 +122,10 @@ orgProfileRouter.post(
     const id = Number(req.params.id);
     const existing = await orgProfileRepository.findById(id);
     if (!existing) {
-      await fs.promises.rm(req.file.path, { force: true });
       throw new AppError(404, "not_found", "Organisation profile not found");
     }
-    if (existing.headerImagePath) {
-      try {
-        await fs.promises.rm(resolveUnderFilesDir(existing.headerImagePath), { force: true });
-      } catch {
-        /* ignore */
-      }
-    }
-    const headerImagePath = `photos/${req.file.filename}`;
+    await deleteStoredFile(existing.headerImagePath);
+    const headerImagePath = await saveUploadedFile(orgImageKey(existing.id, req.file), req.file);
     const row = await orgProfileRepository.updateImage(id, headerImagePath);
     res.json({ data: toDto(row) });
   })
@@ -148,17 +141,11 @@ orgProfileRouter.get(
     if (!row) throw new AppError(404, "not_found", "Organisation profile not found");
     if (!row.headerImagePath) throw new AppError(404, "not_found", "Profile has no image");
 
-    let abs: string;
-    try {
-      abs = resolveUnderFilesDir(row.headerImagePath);
-    } catch {
-      throw new AppError(404, "not_found", "Image file missing");
-    }
-    if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Image file missing");
-
-    res.setHeader("Content-Type", photoContentType(abs));
-    const stream = fs.createReadStream(abs);
-    stream.on("error", (err) => res.destroy(err));
-    stream.pipe(res);
+    await streamStoredFile(
+      res,
+      row.headerImagePath,
+      photoContentType(row.headerImagePath),
+      "Image file missing"
+    );
   })
 );

@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import { Router } from "express";
 import {
   studentCreateSchema,
@@ -9,13 +8,19 @@ import {
 import { studentRepository, classRepository, feePaymentRepository, attendanceRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { renderPdf } from "../lib/pdf";
 import { getOrgHeader } from "../lib/orgProfile";
-import { resolveUnderFilesDir } from "../lib/paths";
-import { uploadStudentPhoto, photoContentType } from "../lib/upload";
-
+import {
+  uploadStudentPhoto,
+  photoContentType,
+  studentPhotoKey,
+  saveUploadedFile,
+  deleteStoredFile,
+} from "../lib/upload";
+import { streamStoredFile } from "../lib/storage";
+import { recordAuditFromRequest } from "../lib/audit/auditLog";
 export const studentsRouter = Router();
 
 studentsRouter.use(requireAuth);
@@ -53,7 +58,7 @@ studentsRouter.get(
 // POST /students — admit a student (Admin only; §6 roles).
 studentsRouter.post(
   "/",
-  requirePermission("students.manage"),
+  requireResourcePermission("students", "create"),
   validateBody(studentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof studentCreateSchema._output;
@@ -75,6 +80,13 @@ studentsRouter.post(
       photoPath: null,
       notes: dto.notes ?? null,
       status: dto.status ?? "active",
+    });
+    await recordAuditFromRequest(req, {
+      action: "create",
+      entity: "student",
+      resourceId: student.id,
+      outcome: "success",
+      additionalDetails: { admissionNo: student.admissionNo, classId: student.classId },
     });
     res.status(201).json({ data: student });
   })
@@ -115,10 +127,10 @@ studentsRouter.get(
   })
 );
 
-// PATCH /students/:id — update fields (Admin only).
+// PATCH /students/:id — update fields.
 studentsRouter.patch(
   "/:id",
-  requirePermission("students.manage"),
+  requireResourcePermission("students", "update"),
   validateBody(studentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -129,6 +141,13 @@ studentsRouter.patch(
     const effectiveCategoryId = "categoryId" in dto ? dto.categoryId : exists.categoryId;
     await validateCategoryForClass(effectiveClassId, effectiveCategoryId);
     const student = await studentRepository.update(id, dto);
+    await recordAuditFromRequest(req, {
+      action: "update",
+      entity: "student",
+      resourceId: id,
+      outcome: "success",
+      additionalDetails: { fields: Object.keys(dto) },
+    });
     res.json({ data: student });
   })
 );
@@ -140,12 +159,19 @@ studentsRouter.patch(
 // (double-click, retry) should succeed quietly rather than surface an error.
 studentsRouter.delete(
   "/:id",
-  requirePermission("students.manage"),
+  requireResourcePermission("students", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const exists = await studentRepository.findById(id);
     if (!exists) throw new AppError(404, "not_found", "Student not found");
     await studentRepository.softDelete(id);
+    await recordAuditFromRequest(req, {
+      action: "delete",
+      entity: "student",
+      resourceId: id,
+      outcome: "success",
+      additionalDetails: { soft: true, previousStatus: exists.status },
+    });
     res.json({ data: { id, status: "inactive" } });
   })
 );
@@ -181,10 +207,10 @@ studentsRouter.get(
   })
 );
 
-// POST /students/:id/photo — upload/replace the student photo (Admin only).
+// POST /students/:id/photo — upload/replace the student photo.
 studentsRouter.post(
   "/:id/photo",
-  requirePermission("students.manage"),
+  requireResourcePermission("students", "update"),
   uploadStudentPhoto,
   asyncHandler(async (req, res) => {
     if (!req.file) {
@@ -193,21 +219,13 @@ studentsRouter.post(
     const id = Number(req.params.id);
     const existing = await studentRepository.findById(id);
     if (!existing) {
-      // Defensive: the upload middleware already 404s unknown ids before writing.
-      await fs.promises.rm(req.file.path, { force: true });
       throw new AppError(404, "not_found", "Student not found");
     }
 
-    // Remove the previous photo file so we don't leave orphans on disk.
-    if (existing.photoPath) {
-      try {
-        await fs.promises.rm(resolveUnderFilesDir(existing.photoPath), { force: true });
-      } catch {
-        /* ignore invalid stored paths */
-      }
-    }
+    // Remove the previous photo so we don't leave orphans in local/S3 storage.
+    await deleteStoredFile(existing.photoPath);
 
-    const photoPath = `photos/${req.file.filename}`;
+    const photoPath = await saveUploadedFile(studentPhotoKey(existing.admissionNo, req.file), req.file);
     const student = await studentRepository.updatePhoto(id, photoPath);
     res.json({ data: student });
   })
@@ -222,17 +240,11 @@ studentsRouter.get(
     if (!student) throw new AppError(404, "not_found", "Student not found");
     if (!student.photoPath) throw new AppError(404, "not_found", "Student has no photo");
 
-    let abs: string;
-    try {
-      abs = resolveUnderFilesDir(student.photoPath);
-    } catch {
-      throw new AppError(404, "not_found", "Photo file missing");
-    }
-    if (!fs.existsSync(abs)) throw new AppError(404, "not_found", "Photo file missing");
-
-    res.setHeader("Content-Type", photoContentType(abs));
-    const stream = fs.createReadStream(abs);
-    stream.on("error", (err) => res.destroy(err));
-    stream.pipe(res);
+    await streamStoredFile(
+      res,
+      student.photoPath,
+      photoContentType(student.photoPath),
+      "Photo file missing"
+    );
   })
 );
