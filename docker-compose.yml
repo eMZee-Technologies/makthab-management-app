@@ -29,7 +29,12 @@
 #   JWT_SECRET, JWT_REFRESH_SECRET, SEED_ADMIN_PASSWORD, …
 services:
   postgres:
-    image: postgres:16-alpine
+    # Matches whatever native PostgreSQL major version is used for local
+    # dev on this machine (currently 18) -- pg_dump output from a newer
+    # server includes SET statements for GUCs the older server doesn't
+    # recognize (e.g. transaction_timeout, added in PG17), so restoring a
+    # backup taken from a newer instance into an older image fails outright.
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
@@ -41,7 +46,11 @@ services:
       # Port 5434, not 5432/5433 — see the comment above.
       - "127.0.0.1:5434:5432"
     volumes:
-      - makthab_pg_data:/var/lib/postgresql/data
+      # postgres:18+ images expect a single mount at /var/lib/postgresql
+      # (data lives in a version-specific subdirectory under it, for
+      # pg_ctlcluster/pg_upgrade --link compatibility) -- mounting at the
+      # old /var/lib/postgresql/data path makes 18+ refuse to start.
+      - makthab_pg_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
