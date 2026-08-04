@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import {
+  allowsLegacyPermission,
   can,
   legacyKeysToMatrix,
   type Action,
@@ -178,18 +179,20 @@ export function requireResourceReadOrMutate(resource: ResourceKey) {
   };
 }
 
-/** Legacy string-key gate (Admin bypass via isFullAccess / full matrix). */
+/** Legacy string-key gate — prefers matrix via allowsLegacyPermission. */
 export function requirePermission(...keys: string[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {
       throw new AppError(401, "unauthorized", "Authentication required");
     }
-    if (req.user.isFullAccess) {
+    const held = heldMatrix(req);
+    if (keys.some((k) => allowsLegacyPermission(held, k))) {
       next();
       return;
     }
-    const held = new Set(req.user.permissions ?? []);
-    if (keys.some((k) => held.has(k))) {
+    // Dual-read: in-flight tokens may still carry permissions: string[].
+    const legacy = new Set(req.user.permissions ?? []);
+    if (keys.some((k) => legacy.has(k))) {
       next();
       return;
     }
