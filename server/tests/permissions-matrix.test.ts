@@ -4,8 +4,14 @@ import {
   matrixToLegacyKeys,
   parseRolePermissionsJson,
   encodeRolePermissionsForStorage,
+  encodeRolePermissionsObject,
   toLegacyPermissionKeys,
   effectiveResourceMatrix,
+  setResourceAction,
+  computeOverrides,
+  adminBaselineMatrix,
+  clearAllResourceMatrix,
+  normalizeRolePermissions,
   type PermissionKey,
 } from "@makthab/shared";
 
@@ -62,13 +68,51 @@ describe("permission matrix adapters", () => {
     expect(JSON.parse(encodeRolePermissionsForStorage([], { isFullAccess: true }))).toEqual({
       mode: "all",
     });
-    expect(toLegacyPermissionKeys(encodeRolePermissionsForStorage([], { isFullAccess: true }))).toEqual(
-      expect.arrayContaining([...PERMISSION_KEYS])
-    );
+    expect(
+      toLegacyPermissionKeys(encodeRolePermissionsForStorage([], { isFullAccess: true }))
+    ).toEqual(expect.arrayContaining([...PERMISSION_KEYS]));
   });
 
   it("corrupt JSON yields empty matrix / no legacy keys", () => {
     expect(toLegacyPermissionKeys("not-json")).toEqual([]);
     expect(toLegacyPermissionKeys("{}")).toEqual([]);
+  });
+
+  it("setResourceAction implies view and clearing view clears the row", () => {
+    let resources = clearAllResourceMatrix();
+    resources = setResourceAction(resources, "fees", "create", true);
+    expect(resources.fees).toMatchObject({ view: true, create: true });
+    resources = setResourceAction(resources, "fees", "view", false);
+    expect(resources.fees).toMatchObject({
+      view: false,
+      create: false,
+      update: false,
+      delete: false,
+    });
+  });
+
+  it("computeOverrides marks diffs from Admin baseline", () => {
+    const resources = adminBaselineMatrix();
+    resources.fees.delete = false;
+    const overrides = computeOverrides(resources);
+    expect(overrides.fees).toEqual({ delete: false });
+  });
+
+  it("normalizeRolePermissions stores overrides when inheriting", () => {
+    const resources = adminBaselineMatrix();
+    resources.roles.view = false;
+    resources.roles.create = false;
+    resources.roles.update = false;
+    resources.roles.delete = false;
+    const normalized = normalizeRolePermissions({
+      mode: "matrix",
+      inheritsFromAdmin: true,
+      resources,
+    });
+    expect(normalized.mode).toBe("matrix");
+    if (normalized.mode === "matrix") {
+      expect(normalized.overrides?.roles).toMatchObject({ view: false });
+      expect(JSON.parse(encodeRolePermissionsObject(normalized)).overrides.roles.view).toBe(false);
+    }
   });
 });

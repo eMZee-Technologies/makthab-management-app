@@ -149,7 +149,24 @@ export type OrgProfileCreateInput = z.infer<typeof orgProfileCreateSchema>;
 
 export const roleCreateSchema = z.object({
   name: z.string().trim().min(1, 'Required'),
-  permissions: z.array(z.string()).default([]),
+  inheritsFromAdmin: z.boolean().optional(),
+  permissionMatrix: z
+    .object({
+      mode: z.literal('matrix'),
+      inheritsFromAdmin: z.boolean(),
+      resources: z.record(
+        z.string(),
+        z.object({
+          view: z.boolean(),
+          create: z.boolean(),
+          update: z.boolean(),
+          delete: z.boolean(),
+        }),
+      ),
+      overrides: z.record(z.string(), z.record(z.string(), z.boolean()).optional()).optional(),
+    })
+    .optional(),
+  permissions: z.array(z.string()).optional(),
 });
 export type RoleCreateInput = z.infer<typeof roleCreateSchema>;
 

@@ -1,10 +1,8 @@
 import { z } from "zod";
 
-// Permission keys — the full catalogue of access grants a Role can hold. Each
-// key maps 1:1 to a route guard on the server (see requirePermission usage).
-// Frontend still edits these as checkboxes in Phase 1; Phase 2 switches writes
-// to the resource matrix. JWT + route guards keep using these legacy keys via
-// matrixToLegacyKeys / legacyKeysToMatrix adapters.
+// Permission keys — legacy catalogue mapped 1:1 to route guards. Phase 2 UI
+// edits the resource matrix; JWT + guards still consume these keys via
+// matrixToLegacyKeys until Phase 3 migrates guards.
 export const PERMISSION_CATALOG = [
   { key: "students.manage", label: "Manage students", description: "Create, edit, and delete students" },
   { key: "classes.manage", label: "Manage classes", description: "Create, edit, and delete classes" },
@@ -120,20 +118,35 @@ export const resourceActionsSchema = z.object({
 });
 export type ResourceActions = z.infer<typeof resourceActionsSchema>;
 
-const resourcesRecordSchema = z.record(resourceKeySchema, resourceActionsSchema);
+const resourcesRecordSchema = z.object({
+  dashboard: resourceActionsSchema,
+  students: resourceActionsSchema,
+  classes: resourceActionsSchema,
+  fees: resourceActionsSchema,
+  attendance: resourceActionsSchema,
+  finance: resourceActionsSchema,
+  reports: resourceActionsSchema,
+  users: resourceActionsSchema,
+  roles: resourceActionsSchema,
+  organisation: resourceActionsSchema,
+  admin: resourceActionsSchema,
+});
+
+export const rolePermissionsMatrixSchema = z.object({
+  mode: z.literal("matrix"),
+  inheritsFromAdmin: z.boolean(),
+  resources: resourcesRecordSchema,
+  overrides: z.record(resourceKeySchema, resourceActionsSchema.partial()).optional(),
+});
 
 export const rolePermissionsSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("all") }),
-  z.object({
-    mode: z.literal("matrix"),
-    inheritsFromAdmin: z.boolean(),
-    resources: resourcesRecordSchema,
-    overrides: z.record(resourceKeySchema, resourceActionsSchema.partial()).optional(),
-  }),
+  rolePermissionsMatrixSchema,
 ]);
 export type RolePermissions = z.infer<typeof rolePermissionsSchema>;
+export type RolePermissionsMatrix = z.infer<typeof rolePermissionsMatrixSchema>;
 
-/** Legacy permission key → resource/action grants (Phase 1 dual-read adapter). */
+/** Legacy permission key → resource/action grants (dual-read adapter). */
 export const LEGACY_KEY_GRANTS: Record<
   PermissionKey,
   Partial<Record<ResourceKey, readonly Action[]>>
@@ -161,7 +174,7 @@ export function emptyResourceMatrix(): Record<ResourceKey, ResourceActions> {
   >;
 }
 
-/** Full matrix for Admin / mode:"all" — only supported actions are true. */
+/** Admin baseline / mode:"all" effective matrix — only supported actions are true. */
 export function fullResourceMatrix(): Record<ResourceKey, ResourceActions> {
   return Object.fromEntries(
     RESOURCE_CATALOG.map((r) => [
@@ -176,11 +189,15 @@ export function fullResourceMatrix(): Record<ResourceKey, ResourceActions> {
   ) as Record<ResourceKey, ResourceActions>;
 }
 
+/** Snapshot inherit baseline (Admin always has every supported action). */
+export function adminBaselineMatrix(): Record<ResourceKey, ResourceActions> {
+  return fullResourceMatrix();
+}
+
 export function effectiveResourceMatrix(
   permissions: RolePermissions
 ): Record<ResourceKey, ResourceActions> {
   if (permissions.mode === "all") return fullResourceMatrix();
-  // Ensure every catalog resource is present (sparse DB rows / partial edits).
   const base = emptyResourceMatrix();
   for (const key of RESOURCE_KEYS) {
     const row = permissions.resources[key];
@@ -189,11 +206,122 @@ export function effectiveResourceMatrix(
   return base;
 }
 
+export function supportedActionsFor(resource: ResourceKey): readonly Action[] {
+  const def = RESOURCE_CATALOG.find((r) => r.key === resource);
+  return def?.actions ?? [];
+}
+
+/** Zero unsupported actions; create/update/delete imply view. */
+export function normalizeResourceRow(
+  resource: ResourceKey,
+  row: Partial<ResourceActions> | undefined
+): ResourceActions {
+  const supported = new Set(supportedActionsFor(resource));
+  const next = emptyResourceActions();
+  for (const action of ACTIONS) {
+    next[action] = supported.has(action) ? Boolean(row?.[action]) : false;
+  }
+  if (next.create || next.update || next.delete) next.view = true;
+  return next;
+}
+
+export function normalizeResourceMatrix(
+  resources: Partial<Record<ResourceKey, Partial<ResourceActions>>> | undefined
+): Record<ResourceKey, ResourceActions> {
+  const next = emptyResourceMatrix();
+  for (const key of RESOURCE_KEYS) {
+    next[key] = normalizeResourceRow(key, resources?.[key]);
+  }
+  return next;
+}
+
+export function computeOverrides(
+  resources: Record<ResourceKey, ResourceActions>,
+  baseline: Record<ResourceKey, ResourceActions> = adminBaselineMatrix()
+): Partial<Record<ResourceKey, Partial<ResourceActions>>> {
+  const overrides: Partial<Record<ResourceKey, Partial<ResourceActions>>> = {};
+  for (const key of RESOURCE_KEYS) {
+    const diff: Partial<ResourceActions> = {};
+    let any = false;
+    for (const action of ACTIONS) {
+      if (resources[key][action] !== baseline[key][action]) {
+        diff[action] = resources[key][action];
+        any = true;
+      }
+    }
+    if (any) overrides[key] = diff;
+  }
+  return overrides;
+}
+
+export function isCellOverride(
+  resources: Record<ResourceKey, ResourceActions>,
+  resource: ResourceKey,
+  action: Action,
+  inheritsFromAdmin: boolean,
+  baseline: Record<ResourceKey, ResourceActions> = adminBaselineMatrix()
+): boolean {
+  if (!inheritsFromAdmin) return false;
+  if (!supportedActionsFor(resource).includes(action)) return false;
+  return resources[resource][action] !== baseline[resource][action];
+}
+
+export function normalizeRolePermissions(permissions: RolePermissions): RolePermissions {
+  if (permissions.mode === "all") return { mode: "all" };
+  const resources = normalizeResourceMatrix(permissions.resources);
+  const inheritsFromAdmin = permissions.inheritsFromAdmin;
+  const overrides = inheritsFromAdmin ? computeOverrides(resources) : undefined;
+  const result: RolePermissionsMatrix = {
+    mode: "matrix",
+    inheritsFromAdmin,
+    resources,
+  };
+  if (overrides && Object.keys(overrides).length > 0) result.overrides = overrides;
+  return result;
+}
+
+/** Toggle one cell with implication rules (mutate⇒view; clearing view clears row). */
+export function setResourceAction(
+  resources: Record<ResourceKey, ResourceActions>,
+  resource: ResourceKey,
+  action: Action,
+  value: boolean
+): Record<ResourceKey, ResourceActions> {
+  if (!supportedActionsFor(resource).includes(action)) return resources;
+  const row = { ...resources[resource] };
+  if (!value && action === "view") {
+    row.view = false;
+    row.create = false;
+    row.update = false;
+    row.delete = false;
+  } else {
+    row[action] = value;
+    if (value && action !== "view") row.view = true;
+  }
+  return normalizeResourceMatrix({ ...resources, [resource]: row });
+}
+
+export function selectAllResourceMatrix(): Record<ResourceKey, ResourceActions> {
+  return fullResourceMatrix();
+}
+
+export function clearAllResourceMatrix(): Record<ResourceKey, ResourceActions> {
+  return emptyResourceMatrix();
+}
+
+export function resetToAdminBaseline(): RolePermissionsMatrix {
+  return {
+    mode: "matrix",
+    inheritsFromAdmin: true,
+    resources: adminBaselineMatrix(),
+  };
+}
+
 /**
  * Convert legacy permission-key arrays into a RolePermissions matrix.
  * Grants `dashboard.view` when any other resource has view.
  */
-export function legacyKeysToMatrix(keys: readonly string[]): RolePermissions {
+export function legacyKeysToMatrix(keys: readonly string[]): RolePermissionsMatrix {
   const resources = emptyResourceMatrix();
   for (const key of keys) {
     const grants = LEGACY_KEY_GRANTS[key as PermissionKey];
@@ -202,14 +330,18 @@ export function legacyKeysToMatrix(keys: readonly string[]): RolePermissions {
       ResourceKey,
       readonly Action[],
     ][]) {
-      for (const action of actions) {
-        resources[resource][action] = true;
+      for (const a of actions) {
+        resources[resource][a] = true;
       }
     }
   }
   const anyOtherView = RESOURCE_KEYS.some((k) => k !== "dashboard" && resources[k].view);
   if (anyOtherView) resources.dashboard.view = true;
-  return { mode: "matrix", inheritsFromAdmin: false, resources };
+  return normalizeRolePermissions({
+    mode: "matrix",
+    inheritsFromAdmin: false,
+    resources,
+  }) as RolePermissionsMatrix;
 }
 
 /** Convert a RolePermissions object back to legacy keys for JWT / route guards. */
@@ -235,7 +367,7 @@ export function parseRolePermissionsJson(raw: string): RolePermissions {
       return legacyKeysToMatrix(parsed.filter((p): p is string => typeof p === "string"));
     }
     const result = rolePermissionsSchema.safeParse(parsed);
-    if (result.success) return result.data;
+    if (result.success) return normalizeRolePermissions(result.data);
   } catch {
     // fall through
   }
@@ -247,7 +379,26 @@ export function toLegacyPermissionKeys(raw: string): PermissionKey[] {
   return matrixToLegacyKeys(parseRolePermissionsJson(raw));
 }
 
-/** Encode for DB storage. Full-access roles always store `{ mode: "all" }`. */
+/** Encode a RolePermissions object for DB storage. */
+export function encodeRolePermissionsObject(
+  permissions: RolePermissions,
+  opts?: { isFullAccess?: boolean }
+): string {
+  if (opts?.isFullAccess) return JSON.stringify({ mode: "all" } satisfies RolePermissions);
+  if (permissions.mode === "all") {
+    // Non–full-access roles must not store mode:"all".
+    return JSON.stringify(
+      normalizeRolePermissions({
+        mode: "matrix",
+        inheritsFromAdmin: false,
+        resources: fullResourceMatrix(),
+      })
+    );
+  }
+  return JSON.stringify(normalizeRolePermissions(permissions));
+}
+
+/** Encode legacy keys for DB storage (Phase 1 compat). */
 export function encodeRolePermissionsForStorage(
   keys: readonly string[],
   opts?: { isFullAccess?: boolean }
@@ -256,25 +407,73 @@ export function encodeRolePermissionsForStorage(
   return JSON.stringify(legacyKeysToMatrix(keys));
 }
 
-// RoleCreateDto — POST /roles (Phase 1 still accepts legacy key arrays).
+/**
+ * Resolve create/update body into a RolePermissions value to persist.
+ * Prefers permissionMatrix; falls back to legacy permissions[]; else Admin
+ * baseline when inheritsFromAdmin (default true on create).
+ */
+export function resolveRolePermissionsWrite(input: {
+  permissionMatrix?: RolePermissionsMatrix;
+  permissions?: readonly string[];
+  inheritsFromAdmin?: boolean;
+  isCreate?: boolean;
+}): RolePermissionsMatrix {
+  if (input.permissionMatrix) {
+    const inherits =
+      input.inheritsFromAdmin !== undefined
+        ? input.inheritsFromAdmin
+        : input.permissionMatrix.inheritsFromAdmin;
+    return normalizeRolePermissions({
+      ...input.permissionMatrix,
+      inheritsFromAdmin: inherits,
+    }) as RolePermissionsMatrix;
+  }
+  if (input.permissions) {
+    const matrix = legacyKeysToMatrix(input.permissions);
+    const inheritsFromAdmin = input.inheritsFromAdmin ?? false;
+    return normalizeRolePermissions({
+      ...matrix,
+      inheritsFromAdmin,
+    }) as RolePermissionsMatrix;
+  }
+  const inherits = input.inheritsFromAdmin ?? Boolean(input.isCreate);
+  if (inherits) return resetToAdminBaseline();
+  return {
+    mode: "matrix",
+    inheritsFromAdmin: false,
+    resources: emptyResourceMatrix(),
+  };
+}
+
+// RoleCreateDto — POST /roles. Phase 2 prefers permissionMatrix; legacy
+// permissions[] still accepted for backward compatibility.
 export const roleCreateSchema = z.object({
   name: z.string().trim().min(1),
-  permissions: z.array(permissionKeySchema),
+  inheritsFromAdmin: z.boolean().optional(),
+  permissionMatrix: rolePermissionsMatrixSchema.optional(),
+  permissions: z.array(permissionKeySchema).optional(),
 });
 export type RoleCreateDto = z.infer<typeof roleCreateSchema>;
 
-// RoleUpdateDto — PATCH /roles/:id (partial). System roles reject edits to
-// `name` server-side. Full-access (Admin) permission edits are rejected.
+// RoleUpdateDto — PATCH /roles/:id (partial).
 export const roleUpdateSchema = z
   .object({
     name: z.string().trim().min(1),
-    permissions: z.array(permissionKeySchema),
+    inheritsFromAdmin: z.boolean().optional(),
+    permissionMatrix: rolePermissionsMatrixSchema.optional(),
+    permissions: z.array(permissionKeySchema).optional(),
   })
-  .partial();
+  .partial()
+  .refine(
+    (d) =>
+      d.name !== undefined ||
+      d.permissionMatrix !== undefined ||
+      d.permissions !== undefined ||
+      d.inheritsFromAdmin !== undefined,
+    { message: "At least one field is required" }
+  );
 export type RoleUpdateDto = z.infer<typeof roleUpdateSchema>;
 
-// Serialised Role row. `permissions` stays the legacy key array for JWT/forms;
-// `permissionMatrix` is the Phase 1+ CRUD view of the same grants.
 export type RoleDto = {
   id: number;
   name: string;

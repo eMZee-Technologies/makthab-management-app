@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/api/client';
-import type { RoleCreateInput } from '@/lib/schemas';
-import type { RolePermissions } from '@makthab/shared';
+import type { RolePermissions, RolePermissionsMatrix } from '@makthab/shared';
 
 export interface Role {
   id: number;
@@ -13,6 +12,14 @@ export interface Role {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export type RoleWriteInput = {
+  name?: string;
+  inheritsFromAdmin?: boolean;
+  permissionMatrix?: RolePermissionsMatrix;
+  /** @deprecated Phase 1 legacy — prefer permissionMatrix */
+  permissions?: string[];
+};
 
 export function useRoles() {
   return useQuery({
@@ -27,7 +34,7 @@ export function useRoles() {
 export function useAddRole() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: RoleCreateInput) => unwrap<Role>((await api.post('/roles', input)).data),
+    mutationFn: async (input: RoleWriteInput) => unwrap<Role>((await api.post('/roles', input)).data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
   });
 }
@@ -35,7 +42,7 @@ export function useAddRole() {
 export function useUpdateRole(id: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: Partial<RoleCreateInput>) =>
+    mutationFn: async (input: RoleWriteInput) =>
       unwrap<Role>((await api.patch(`/roles/${id}`, input)).data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['roles'] }),
   });
