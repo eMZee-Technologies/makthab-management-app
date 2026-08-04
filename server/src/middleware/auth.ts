@@ -1,6 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
 import {
-  allowsLegacyPermission,
   can,
   legacyKeysToMatrix,
   type Action,
