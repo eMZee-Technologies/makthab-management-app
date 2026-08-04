@@ -22,4 +22,5 @@ export type {
   PasswordResetToken,
   UserApprovalAudit,
   AdminNotification,
+  AuditLog,
 } from "../../prisma/generated/postgres-client";

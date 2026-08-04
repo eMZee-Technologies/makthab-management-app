@@ -108,6 +108,15 @@ export const env = {
   awsRegion: process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || undefined,
   awsAccessKeyId: process.env.AWS_ACCESS_KEY_ID || undefined,
   awsSecretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || undefined,
+  /** Months to retain AuditLog rows before the purge job deletes them. */
+  auditLogRetentionMonths: Math.max(1, Number(process.env.AUDIT_LOG_RETENTION_MONTHS ?? 12)),
+  /** Warn when this many audit rows are written within a rolling 60s window. */
+  auditLogVolumeWarnPerMinute: Math.max(
+    10,
+    Number(process.env.AUDIT_LOG_VOLUME_WARN_PER_MINUTE ?? 200)
+  ),
+  /** Cron expression for the retention purge (default: daily 03:15). */
+  auditLogPurgeCron: process.env.AUDIT_LOG_PURGE_CRON ?? "15 3 * * *",
 };
 
 export const isProd = env.nodeEnv === "production";

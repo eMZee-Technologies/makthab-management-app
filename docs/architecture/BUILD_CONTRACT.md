@@ -61,6 +61,7 @@ Implement all models from doc §7.1: **Student, FeePayment, Attendance, Expense,
 - No console errors on the happy path. RTL toggle does not break layout.
 
 ## 8. Contract changelog (append when you change the contract)
+- 2026-08-04 — **Application audit logging.** Dedicated `AuditLog` table (append-only app writes, retention purge, SHA-256 hash chain), admin API under `/admin/audit-logs`, admin UI at `/audit-logs`, instrumentation for auth login + student/fee mutations + backup. Design: `docs/architecture/AUDIT_LOGGING.md`.
 - 2026-08-04 — **Roles permissions matrix Phase 3.** JWT carries `permissionMatrix` (no legacy keys). `RolePermissionAudit`, `permissionsVersion` shrink invalidation, role reassign + delete-blocked-when-in-use, resource guards replace `requireRole("Admin")` / legacy keys, client `can()` gating. Design: `docs/architecture/ROLE_PERMISSIONS_MATRIX.md`.
 - 2026-08-04 — **Roles permissions matrix Phase 2.** Interactive resource CRUD matrix on Roles UI (inherit toggle, override markers, select/clear/reset). POST/PATCH `/roles` accept `permissionMatrix` (legacy `permissions[]` still accepted). JWT still carries legacy keys via adapters. Design: `docs/architecture/ROLE_PERMISSIONS_MATRIX.md`.
 - 2026-08-04 — **Roles permissions matrix Phase 1.** Resource CRUD matrix (read-only UI), `Role.isFullAccess`, dual-read storage (`string[]` or `RolePermissions`), `GET /roles/resources`, Admin permission lock. Legacy JWT keys unchanged via adapters. Design: `docs/architecture/ROLE_PERMISSIONS_MATRIX.md`.

@@ -9,6 +9,7 @@ import {
   FileBarChart,
   Building2,
   ShieldCheck,
+  ScrollText,
   type LucideIcon,
 } from 'lucide-react';
 import { can, type Action, type ResourceKey, type RolePermissions } from '@makthab/shared';
@@ -45,6 +46,13 @@ export const NAV_ITEMS: NavItem[] = [
     action: 'view',
   },
   { to: '/roles', labelKey: 'nav.roles', icon: ShieldCheck, resource: 'roles', action: 'view' },
+  {
+    to: '/audit-logs',
+    labelKey: 'nav.auditLogs',
+    icon: ScrollText,
+    resource: 'admin',
+    action: 'view',
+  },
 ];
 
 export function visibleNavItems(matrix: RolePermissions | undefined): NavItem[] {

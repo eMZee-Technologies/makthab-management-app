@@ -20,6 +20,7 @@ import {
   deleteStoredFile,
 } from "../lib/upload";
 import { streamStoredFile } from "../lib/storage";
+import { recordAuditFromRequest } from "../lib/audit/auditLog";
 export const studentsRouter = Router();
 
 studentsRouter.use(requireAuth);
@@ -80,6 +81,13 @@ studentsRouter.post(
       notes: dto.notes ?? null,
       status: dto.status ?? "active",
     });
+    await recordAuditFromRequest(req, {
+      action: "create",
+      entity: "student",
+      resourceId: student.id,
+      outcome: "success",
+      additionalDetails: { admissionNo: student.admissionNo, classId: student.classId },
+    });
     res.status(201).json({ data: student });
   })
 );
@@ -133,6 +141,13 @@ studentsRouter.patch(
     const effectiveCategoryId = "categoryId" in dto ? dto.categoryId : exists.categoryId;
     await validateCategoryForClass(effectiveClassId, effectiveCategoryId);
     const student = await studentRepository.update(id, dto);
+    await recordAuditFromRequest(req, {
+      action: "update",
+      entity: "student",
+      resourceId: id,
+      outcome: "success",
+      additionalDetails: { fields: Object.keys(dto) },
+    });
     res.json({ data: student });
   })
 );
@@ -150,6 +165,13 @@ studentsRouter.delete(
     const exists = await studentRepository.findById(id);
     if (!exists) throw new AppError(404, "not_found", "Student not found");
     await studentRepository.softDelete(id);
+    await recordAuditFromRequest(req, {
+      action: "delete",
+      entity: "student",
+      resourceId: id,
+      outcome: "success",
+      additionalDetails: { soft: true, previousStatus: exists.status },
+    });
     res.json({ data: { id, status: "inactive" } });
   })
 );

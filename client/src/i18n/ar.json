@@ -16,7 +16,8 @@
     "classes": "الصفوف",
     "users": "المستخدمون",
     "organisation": "المؤسسة",
-    "roles": "الأدوار"
+    "roles": "الأدوار",
+    "auditLogs": "سجل التدقيق"
   },
   "common": {
     "search": "بحث",
@@ -351,5 +352,34 @@
     "deleted": "تم حذف الدور بنجاح",
     "confirmDeleteTitle": "حذف الدور",
     "confirmDelete": "حذف الدور {{name}}؟ لا يمكن التراجع عن هذا الإجراء."
+  },
+  "audit": {
+    "title": "سجل التدقيق",
+    "subtitle": "سجل الأمان والتغييرات لعمليات المصادقة وتعديل البيانات.",
+    "from": "من",
+    "to": "إلى",
+    "action": "الإجراء",
+    "entity": "المورد",
+    "outcome": "النتيجة",
+    "userId": "معرّف المستخدم",
+    "userIdPlaceholder": "تصفية حسب معرّف المستخدم",
+    "user": "المستخدم",
+    "timestamp": "الوقت",
+    "resourceId": "معرّف المورد",
+    "ip": "عنوان IP",
+    "userAgent": "وكيل المستخدم",
+    "details": "تفاصيل إضافية",
+    "contentHash": "تجزئة المحتوى",
+    "prevHash": "التجزئة السابقة",
+    "detailTitle": "إدخال السجل",
+    "selectHint": "اختر صفاً لعرض التفاصيل الكاملة.",
+    "empty": "لا توجد إدخالات تطابق عوامل التصفية.",
+    "allActions": "كل الإجراءات",
+    "allEntities": "كل الموارد",
+    "allOutcomes": "كل النتائج",
+    "verifyIntegrity": "التحقق من السلامة",
+    "integrityOk": "سلسلة التدقيق سليمة",
+    "integrityBroken": "سلسلة التدقيق مكسورة",
+    "integrityFailed": "فشل التحقق من السلامة"
   }
 }

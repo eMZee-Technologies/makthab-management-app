@@ -16,7 +16,8 @@
     "classes": "Classes",
     "users": "Users",
     "organisation": "Organisation",
-    "roles": "Roles"
+    "roles": "Roles",
+    "auditLogs": "Audit logs"
   },
   "common": {
     "search": "Search",
@@ -351,5 +352,34 @@
     "deleted": "Role deleted successfully",
     "confirmDeleteTitle": "Delete Role",
     "confirmDelete": "Delete the {{name}} role? This cannot be undone."
+  },
+  "audit": {
+    "title": "Audit logs",
+    "subtitle": "Security and change history for authentication and data mutations.",
+    "from": "From",
+    "to": "To",
+    "action": "Action",
+    "entity": "Resource",
+    "outcome": "Outcome",
+    "userId": "User ID",
+    "userIdPlaceholder": "Filter by user id",
+    "user": "User",
+    "timestamp": "Time",
+    "resourceId": "Resource ID",
+    "ip": "IP",
+    "userAgent": "User agent",
+    "details": "Additional details",
+    "contentHash": "Content hash",
+    "prevHash": "Previous hash",
+    "detailTitle": "Log entry",
+    "selectHint": "Select a row to view full details.",
+    "empty": "No audit entries match these filters.",
+    "allActions": "All actions",
+    "allEntities": "All resources",
+    "allOutcomes": "All outcomes",
+    "verifyIntegrity": "Verify integrity",
+    "integrityOk": "Audit chain intact",
+    "integrityBroken": "Audit chain broken",
+    "integrityFailed": "Integrity check failed"
   }
 }

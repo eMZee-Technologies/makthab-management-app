@@ -33,6 +33,7 @@ import {
 import { issuePasswordResetToken, consumePasswordResetToken } from "../lib/auth/passwordReset";
 import { notifyAdminsByEmail } from "../lib/auth/notifier";
 import { authRateLimiter, otpRateLimiter } from "../lib/auth/rateLimit";
+import { clientMeta, recordAudit } from "../lib/audit/auditLog";
 
 export const authRouter = Router();
 
@@ -285,14 +286,41 @@ authRouter.post(
           env.loginLockoutMinutes
         );
       }
+      const meta = clientMeta(req);
+      await recordAudit({
+        userId: user?.id ?? null,
+        action: "login",
+        entity: "auth",
+        outcome: "failure",
+        additionalDetails: { username, reason: user ? "bad_password" : "unknown_user" },
+        ...meta,
+      });
       throw new AppError(401, "invalid_credentials", "Invalid username or password");
     }
 
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
+      const meta = clientMeta(req);
+      await recordAudit({
+        userId: user.id,
+        action: "login",
+        entity: "auth",
+        outcome: "failure",
+        additionalDetails: { username, reason: "locked" },
+        ...meta,
+      });
       throw new AppError(423, "account_locked", "Account temporarily locked. Try again later.");
     }
 
     if (user.status !== "active") {
+      const meta = clientMeta(req);
+      await recordAudit({
+        userId: user.id,
+        action: "login",
+        entity: "auth",
+        outcome: "failure",
+        additionalDetails: { username, reason: "inactive_status", status: user.status },
+        ...meta,
+      });
       // Same envelope as bad credentials to avoid status enumeration.
       throw new AppError(401, "invalid_credentials", "Invalid username or password");
     }
@@ -310,6 +338,16 @@ authRouter.post(
       permissionsVersion,
     });
     const refreshToken = signRefreshToken(user.id);
+
+    const meta = clientMeta(req);
+    await recordAudit({
+      userId: user.id,
+      action: "login",
+      entity: "auth",
+      outcome: "success",
+      additionalDetails: { username, role },
+      ...meta,
+    });
 
     res.json({
       data: {
