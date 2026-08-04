@@ -52,6 +52,7 @@ Implement all models from doc §7.1: **Student, FeePayment, Attendance, Expense,
 - No console errors on the happy path. RTL toggle does not break layout.
 
 ## 8. Contract changelog (append when you change the contract)
+- 2026-08-04 — **Roles permissions matrix plan (proposed).** Evolve coarse `PERMISSION_CATALOG` keys into a per-resource CRUD matrix (View/Create/Update/Delete) with Admin full-access lock, inheritance/overrides, and phased migration. Design doc: `docs/architecture/ROLE_PERMISSIONS_MATRIX.md`. §6 roles text remains in force until Phase 3 lands.
 - 2026-07-03 — Initial contract created by the coordinator.
 - 2026-07-04 (Backend) — Scaffold done (#1): npm workspaces (`packages/*`,`server`,`client`); root scripts `dev`/`build`/`typecheck`/`db:*`. Server boots on :3000, `/health` returns `{data:{status:"ok",...}}`.
 - 2026-07-04 (Backend) — Prisma schema stable (#2). Models: Student, FeePayment, Attendance, Expense, Staff, SalaryPayment, Class, AcademicYear, ExpenseCategory + **User** (auth) + **FeeStructure**. Notes: (a) `User` holds login (`username`,`passwordHash`,`role`) and links 1:1 to `Staff` via `staffId`; the actor FKs `FeePayment.collectedById`/`Attendance.markedById`/`Expense.approvedById` reference **Staff.id** (use the logged-in user's `staffId`). (b) Student adds `notes` + `legacyBillNo` (migration overflow) beyond doc §7.1. (c) `Class.name`, `AcademicYear.name`, `ExpenseCategory.name` are `@unique`. Seed: years 2024-2025/2025-2026, classes LKG,UKG,I,II,1–7, 10 expense categories, admin login **admin / admin123**.
