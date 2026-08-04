@@ -1,6 +1,9 @@
 # Makthab v3 — Phase 2: AWS Cloud Deployment
 
-**Status:** Proposal / discussion document. Nothing here is implemented yet.
+**Status:** Implementation in progress — Terraform modules, CI/CD, storage
+adapter, and runbook landed under `infra/terraform/`, `.github/workflows/`,
+`server/src/lib/storage/`, and `docs/deployment/AWS_RUNBOOK.md`. Apply to a
+real AWS account is still a manual `terraform apply` step.
 **Depends on:** [01-multi-database-support.md](./01-multi-database-support.md) (Phase 1) — this doc assumes the API talks to PostgreSQL via the DB abstraction landed there, not SQLite.
 **See also:** [00-overview-and-prioritization.md](./00-overview-and-prioritization.md) for the overall attack order and phase table.
 
@@ -348,3 +351,16 @@ existing Definition-of-Done checklist in `BUILD_CONTRACT.md` §7:
 5. Dry-run the backup restore runbook (§8) against a snapshot in a scratch
    RDS instance, end-to-end, before go-live — a DR plan that's never been
    executed once is not a plan.
+
+## 12. Implementation status (repo)
+
+| Milestone | Status | Location |
+|---|---|---|
+| M1 VPC + RDS + Secrets | Terraform modules ready | `infra/terraform/modules/{networking,database,secrets}` |
+| M2 Dockerfile | Present (multi-stage) | root `Dockerfile` (from `Dockerfile.txt`) |
+| M3 S3 file storage | Adapter + fee receipts wired; photos/payslips/reports still local-disk | `server/src/lib/storage`, `STORAGE_BACKEND` / `S3_BUCKET` |
+| M4 ECS + ALB | Terraform module ready | `infra/terraform/modules/ecs` |
+| M5 CloudFront + S3 client | Terraform module ready | `infra/terraform/modules/{storage,cdn}` |
+| M6 CI/CD | GitHub Actions | `.github/workflows/{ci,deploy-staging}.yml` |
+| M7 Alarms + runbook | Terraform + docs | `infra/terraform/modules/monitoring`, `docs/deployment/AWS_RUNBOOK.md` |
+| M7.5 / M8 cutover | Manual — requires AWS account `terraform apply` + data load | See `infra/terraform/README.md` |

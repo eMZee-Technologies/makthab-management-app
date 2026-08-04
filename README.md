@@ -21,7 +21,8 @@ packages/shared/   # @makthab/shared — Zod schemas + DTOs (server owns, client
 server/            # @makthab/server*  — Express + Prisma API        (port 3000)
 client/            # @makthab/client   — Vite + React SPA            (port 5173)
 data/              # madrasa.db (SQLite) + generated files/{receipts,payslips,reports,photos}
-docs/              # architecture, migration, reference, development docs
+infra/terraform/   # AWS Phase 2 IaC (VPC, RDS, ECS, S3, CloudFront, …)
+docs/              # architecture, migration, reference, development, deployment docs
 ```
 (*`server` is unscoped in package.json.) npm workspaces are declared at the repo root.
 
@@ -215,6 +216,23 @@ for the full design.
 
 See [`docs/`](docs/) — architecture, the build contract, the data-migration
 guide, and testing notes.
+
+## AWS deployment (Phase 2)
+
+Terraform under [`infra/terraform/`](infra/terraform/) provisions VPC, RDS
+PostgreSQL, ECS Fargate + ALB, S3, CloudFront, Secrets Manager, and alarms.
+GitHub Actions: `.github/workflows/ci.yml` (PR checks) and
+`deploy-staging.yml` (ECR + S3 + ECS). Operational steps:
+[`docs/deployment/AWS_RUNBOOK.md`](docs/deployment/AWS_RUNBOOK.md).
+
+```bash
+cd infra/terraform/envs/staging
+cp terraform.tfvars.example terraform.tfvars   # fill secrets
+terraform init && terraform plan
+```
+
+Set `STORAGE_BACKEND=s3` and `S3_BUCKET` on ECS (Terraform does this);
+local/dev omits `STORAGE_BACKEND` (or sets `local`) so files stay under `data/files/`.
 
 ---
 

@@ -107,6 +107,19 @@ Desktop.ini
 # ignore per-user local overrides.
 .claude/settings.local.json
 
+# --- Terraform -------------------------------------------------------------
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/crash.log
+**/override.tf
+**/override.tf.json
+**/*_override.tf
+**/*_override.tf.json
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+
 # --- Database backups -------------------------------------------------------
 # Produced by scripts/db/backup-postgres.ps1 — contains real student/finance
 # data, never commit.

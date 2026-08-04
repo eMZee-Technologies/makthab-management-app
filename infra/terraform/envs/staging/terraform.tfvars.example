@@ -1,0 +1,16 @@
+environment         = "staging"
+aws_region          = "us-east-1"
+availability_zones  = ["us-east-1a", "us-east-1b"]
+vpc_cidr            = "10.20.0.0/16"
+db_instance_class   = "db.t4g.micro"
+db_name             = "makthab"
+db_username         = "makthab"
+# db_password       = "set-via-TF_VAR_db_password or -var"
+# jwt_secret        = "..."
+# jwt_refresh_secret = "..."
+desired_count       = 1
+use_nat_gateway     = false
+# client_domain     = "app.example.com"
+# api_domain        = "api.example.com"
+# alarm_email       = "ops@example.com"
+# container_image   = "<account>.dkr.ecr.us-east-1.amazonaws.com/makthab-staging:sha"
