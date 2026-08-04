@@ -222,8 +222,8 @@ describe('Student Model', () => {
     const studentData = {
       tenantId,
       admissionNumber: 'STU001',
-      firstName: 'Ahmed',
-      lastName: 'Khan',
+      firstName: 'Test',
+      lastName: 'Student',
       dateOfBirth: new Date('2015-08-15'),
       gender: Gender.MALE,
       admissionDate: new Date(),
@@ -244,7 +244,7 @@ describe('AuthController', () => {
       .post('/api/auth/login')
       .send({
         email: 'test@example.com',
-        password: 'password123',
+        password: '<password>',
       });
 
     expect(response.status).toBe(200);
@@ -279,7 +279,7 @@ describe('Login Component', () => {
       target: { value: 'test@example.com' },
     });
     fireEvent.change(screen.getByLabelText('Password'), {
-      target: { value: 'password123' },
+      target: { value: '<password>' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Sign In' }));
 

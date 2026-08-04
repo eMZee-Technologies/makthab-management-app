@@ -40,7 +40,7 @@ npm run migrate:xlsx -w server
 ## Student backfill (important)
 
 The **`Admission Details`** tab lists only **36** students, but the fee sheets
-reference **69** (UF00001–UF00069). The script backfills the missing 33:
+reference **69** distinct admission numbers. The script backfills the missing 33:
 
 - **27** from the monthly-fee sheets (which carry name / gender / father /
   contact / class in columns 1–6), and

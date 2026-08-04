@@ -83,12 +83,14 @@ Two env vars control which database the app uses:
 
 ```bash
 DATABASE_PROVIDER=postgresql
-DATABASE_URL="postgresql://postgres:postgres@localhost:5434/makthab_dev"
+DATABASE_URL="postgresql://USER:PASSWORD@localhost:5434/makthab_dev"
 ```
 
-You can set these in `server/.env`, or pass them inline with `cross-env`. If
-you're using a natively-installed Postgres instead of this Docker container,
-point `DATABASE_URL` at whatever host/port that service actually listens on.
+Copy credentials from `server/.env.example` / your local secrets — never commit
+real passwords. You can set these in `server/.env`, or pass them inline with
+`cross-env`. If you're using a natively-installed Postgres instead of this
+Docker container, point `DATABASE_URL` at whatever host/port that service
+actually listens on.
 
 ### 3. Migrate and seed
 
@@ -127,11 +129,11 @@ DATABASE_PROVIDER=postgresql npm run migrate:xlsx -w server
 
 ### Seed logins
 
-| Username | Password | Role |
-|---|---|---|
-| `admin` | `admin123` | Admin (full access) |
-| `accountant` | `accountant123` | Fees, finance, reports |
-| `teacher` | `teacher123` | Attendance |
+After `db:seed` / `db:reset`, local bootstrap users are created for roles
+**Admin**, **Accountant**, and **Teacher**. Default passwords live only in
+`server/prisma/seed.ts` (override with `SEED_ADMIN_PASSWORD`,
+`SEED_ACCOUNTANT_PASSWORD`, `SEED_TEACHER_PASSWORD`). **Do not reuse seed
+credentials outside local development**, and never commit production passwords.
 
 ## Scripts (root)
 

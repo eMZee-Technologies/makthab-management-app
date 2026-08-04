@@ -28,7 +28,7 @@ The API contract, roles, and Prisma data model are specified in
 ```bash
 npm install                    # install all workspaces
 npm run build:shared           # compile @makthab/shared (needed before server build/tests)
-npm run db:reset -w server     # prisma migrate + seed (admin/admin123, etc.)
+npm run db:reset -w server     # prisma migrate + seed (local bootstrap users; see seed.ts)
 npm run migrate:xlsx -w server # import docs/source-data/Maktab Detailed - Report.xlsx
 npm run dev                    # server + client together
 npm run typecheck              # all three workspaces

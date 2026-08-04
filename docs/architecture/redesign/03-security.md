@@ -33,7 +33,7 @@ standard that would survive a serious incident review.
 **Assets:**
 - Student PII (name, date of birth, guardian contact, photos, attendance) — minors' data.
 - Financial records (fee payments, salary payments, receipts) — mapped to real money.
-- Auth credentials (JWT secrets, `admin/admin123`-style seeded passwords — must not survive
+- Auth credentials (JWT secrets, default local seed passwords — must not survive
   into any real deployment).
 - Generated documents (PDF receipts/payslips, Excel reports) — contain the above in exportable form.
 - The backup/restore capability itself (an `admin/backup` route per `CLAUDE.md` — a single
@@ -58,7 +58,7 @@ standard that would survive a serious incident review.
 - Secrets (`JWT_SECRET`, `JWT_REFRESH_SECRET`, `DATABASE_URL`) live in a `.env` file, not a
   managed secret store — fine for local dev, not for a shared cloud deployment.
 - No audit trail of who changed/deleted a financial record or a student profile.
-- Seeded credentials (`admin/admin123` per `docs/architecture/BUILD_CONTRACT.md`) must be
+- Seeded local credentials (see `server/prisma/seed.ts` / `SEED_*_PASSWORD`) must be
   excluded from any environment beyond local dev/test.
 
 ---
@@ -258,7 +258,7 @@ in now rather than retrofitting later:
 
 Pre-launch, verify all of the following:
 
-- [ ] No seeded/default credentials (`admin/admin123` or equivalent) exist outside local dev/test databases.
+- [ ] No seeded/default credentials (or documented plaintext passwords) exist outside local dev/test databases.
 - [ ] `JWT_SECRET`/`JWT_REFRESH_SECRET`/`DATABASE_URL` sourced from Secrets Manager, not baked into images or committed `.env` files.
 - [ ] TLS enforced end-to-end (client↔CloudFront, CloudFront↔ALB, ALB↔ECS if applicable, ECS↔RDS).
 - [ ] RDS and S3 encrypted at rest with customer-managed KMS keys.
