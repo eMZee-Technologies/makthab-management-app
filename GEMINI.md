@@ -49,9 +49,11 @@ npm run db:reset -w server
 Default seeded logins for testing:
 | Username | Password | Role | Access Level |
 |---|---|---|---|
-| `admin` | `admin123` | `Admin` | Full System Access |
-| `accountant` | `accountant123` | `Accountant` | Fees, Expenses, Salaries, Reports (No student edits) |
-| `teacher` | `teacher123` | `Teacher` | Attendance marking for assigned classes only |
+| `admin` | *(local seed only — see `server/prisma/seed.ts` / `SEED_*_PASSWORD`)* | `Admin` | Full System Access |
+| `accountant` | *(local seed only — see `server/prisma/seed.ts` / `SEED_*_PASSWORD`)* | `Accountant` | Fees, Expenses, Salaries, Reports (No student edits) |
+| `teacher` | *(local seed only — see `server/prisma/seed.ts` / `SEED_*_PASSWORD`)* | `Teacher` | Attendance marking for assigned classes only |
+
+Do **not** publish or reuse seed passwords outside local development.
 
 ### Development Scripts (Root)
 Run these commands from the repository root:

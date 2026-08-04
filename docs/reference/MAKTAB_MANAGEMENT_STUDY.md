@@ -837,7 +837,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - DATABASE_URL=postgresql://user:pass@db:5432/maktab
+      - DATABASE_URL=postgresql://USER:PASSWORD@db:5432/maktab
     depends_on:
       - db
 
@@ -845,8 +845,8 @@ services:
     image: postgres:15
     environment:
       POSTGRES_DB: maktab
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: pass
+      POSTGRES_USER: USER
+      POSTGRES_PASSWORD: PASSWORD
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -961,14 +961,14 @@ npm run dev:frontend   # Frontend on :3001
 ### Environment Configuration
 ```bash
 # .env.local
-DATABASE_URL=postgresql://maktab_user:password@localhost:5432/maktab_dev
+DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/maktab_dev
 REDIS_URL=redis://localhost:6379
-JWT_SECRET=your-super-secret-jwt-key
+JWT_SECRET=<set-a-long-random-value>
 WHATSAPP_API_URL=https://api.whatsapp.business/v1
-WHATSAPP_ACCESS_TOKEN=your-whatsapp-token
+WHATSAPP_ACCESS_TOKEN=<from-secrets-manager>
 AWS_S3_BUCKET=maktab-files-dev
-AWS_ACCESS_KEY_ID=your-aws-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret
+AWS_ACCESS_KEY_ID=<optional-prefer-iam-role>
+AWS_SECRET_ACCESS_KEY=<optional-prefer-iam-role>
 PDF_GENERATION_SERVICE=local
 ```
 
@@ -1004,8 +1004,8 @@ import supertest from 'supertest';
 describe('Student Service', () => {
     test('should create student with valid data', async () => {
         const studentData = {
-            firstName: 'Ahmed',
-            lastName: 'Khan',
+            firstName: 'Test',
+            lastName: 'Student',
             dateOfBirth: '2015-08-15',
             gender: 'Male'
         };
@@ -1035,7 +1035,7 @@ export const testFixtures = {
     tenant: {
         name: 'Test Maktab',
         subdomain: 'test-maktab',
-        contactEmail: 'admin@test-maktab.com'
+        contactEmail: 'admin@example.com'
     },
 
     student: {
@@ -1048,7 +1048,7 @@ export const testFixtures = {
     guardian: {
         firstName: 'Test',
         lastName: 'Parent',
-        phone: '+919876543210',
+        phone: '+10000000000',
         relationship: 'Father'
     }
 };
@@ -1070,8 +1070,8 @@ import { test, expect } from '@playwright/test';
 test('Student admission workflow', async ({ page }) => {
     // Login as admin
     await page.goto('/login');
-    await page.fill('[data-testid=email]', 'admin@test.com');
-    await page.fill('[data-testid=password]', 'password');
+    await page.fill('[data-testid=email]', 'admin@example.com');
+    await page.fill('[data-testid=password]', '<password>');
     await page.click('[data-testid=login-btn]');
 
     // Navigate to admission
@@ -1079,7 +1079,7 @@ test('Student admission workflow', async ({ page }) => {
     await page.click('[data-testid=new-admission]');
 
     // Fill student form
-    await page.fill('[data-testid=student-name]', 'Ahmed Khan');
+    await page.fill('[data-testid=student-name]', 'Test Student');
     await page.fill('[data-testid=date-of-birth]', '2015-08-15');
     await page.selectOption('[data-testid=gender]', 'Male');
 
@@ -1105,8 +1105,8 @@ scenarios:
       - post:
           url: "/api/auth/login"
           json:
-            email: "admin@test.com"
-            password: "password"
+            email: "admin@example.com"
+            password: "<password>"
       - post:
           url: "/api/fees/payments"
           json:
@@ -1171,7 +1171,7 @@ jobs:
       postgres:
         image: postgres:15
         env:
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: <ci-secret>
         options: >-
           --health-cmd pg_isready
           --health-interval 10s

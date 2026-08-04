@@ -149,7 +149,7 @@ upserts) or restore from snapshot and retry.
 docker compose up -d   # Postgres on :5433
 # server/.env:
 #   DATABASE_PROVIDER=postgresql
-#   DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev"
+#   DATABASE_URL="postgresql://USER:PASSWORD@localhost:5433/makthab_dev"
 
 npm run db:reset:pg -w server
 npm run migrate:xlsx:pg -w server

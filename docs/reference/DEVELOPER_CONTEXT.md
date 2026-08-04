@@ -2,8 +2,8 @@
 
 > **Prepared for:** Developer onboarding / project continuation  
 > **Date:** 2026-05-13  
-> **Project owner:** Saleem Ahmed Khan (khan.saleemahmed@gmail.com)  
-> **Repo / workspace:** `C:\Workspaces\makthab-management-app`
+> **Project owner:** *(redacted — contact the repository maintainers)*  
+> **Repo / workspace:** `makthab-management-app`
 
 ---
 
@@ -463,17 +463,17 @@ Create a `.env` file at `server/.env`:
 ```env
 # Database
 DATABASE_URL="file:./dev.db"           # SQLite for dev
-# DATABASE_URL="postgresql://user:pass@localhost:5432/marthabapp"  # Prod
+# DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/makthab_dev"  # Prod
 
 # Auth
-JWT_SECRET=your-long-random-secret-here
-JWT_REFRESH_SECRET=another-long-random-secret
+JWT_SECRET=<set-a-long-random-value>
+JWT_REFRESH_SECRET=<set-a-long-random-value>
 JWT_EXPIRES_IN=15m
 JWT_REFRESH_EXPIRES_IN=7d
 
 # WhatsApp
 WHATSAPP_PROVIDER=wame                  # wame | wati | twilio
-WATI_API_URL=https://live-mt-server.wati.io/xxx
+WATI_API_URL=
 WATI_API_TOKEN=
 TWILIO_ACCOUNT_SID=
 TWILIO_AUTH_TOKEN=
@@ -481,7 +481,7 @@ TWILIO_WHATSAPP_NUMBER=
 
 # Google Sheets (for migration only)
 GOOGLE_SERVICE_ACCOUNT_JSON=./keys/service-account.json
-# OR: GOOGLE_SHEETS_API_KEY=AIza...
+# OR: GOOGLE_SHEETS_API_KEY=<from-secrets-manager>
 
 # App
 PORT=4000
@@ -495,7 +495,7 @@ FRONTEND_URL=http://localhost:5173
 
 ```bash
 # 1. Clone / open workspace
-cd C:\Workspaces\makthab-management-app
+cd makthab-management-app
 
 # 2. Install pnpm (if not installed)
 npm install -g pnpm
@@ -560,4 +560,4 @@ All documents are in the workspace root (`C:\Workspaces\makthab-management-app`)
 
 ---
 
-*Document generated from design session with Saleem Ahmed Khan, 2026-05-13.*
+*Document generated from design session, 2026-05-13.*

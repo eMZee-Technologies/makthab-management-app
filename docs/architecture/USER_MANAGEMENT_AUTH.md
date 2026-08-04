@@ -55,21 +55,21 @@ Forgot password: `forgot-password` → OTP → `resetToken` → `reset-password`
 
 ```http
 POST /api/v1/auth/signup
-{ "fullName":"Amina Khan","username":"amina","password":"Secret123",
-  "email":"amina@example.com","otpMethod":"email" }
+{ "fullName":"<Full Name>","username":"<username>","password":"<strong-password>",
+  "email":"user@example.com","otpMethod":"email" }
 
-→ { "data": { "challengeId":"…", "message":"…", "devOtp":"123456" } }  # devOtp non-prod only
+→ { "data": { "challengeId":"…", "message":"…", "devOtp":"<otp>" } }  # devOtp non-prod only
 
 POST /api/v1/auth/verify-otp
-{ "challengeId":"…", "code":"123456" }
+{ "challengeId":"…", "code":"<otp>" }
 
 → { "data": { "purpose":"signup", "status":"pending_approval", "message":"…" } }
 
-POST /api/v1/users/42/approve   Authorization: Bearer <admin>
-{ "role":"Teacher", "note":"Verified with Imam" }
+POST /api/v1/users/42/approve   Authorization: Bearer <admin-access-token>
+{ "role":"Teacher", "note":"Verified" }
 
 POST /api/v1/auth/login
-{ "username":"amina", "password":"Secret123" }
+{ "username":"<username>", "password":"<strong-password>" }
 → { "data": { "accessToken","refreshToken","user" } }
 ```
 
@@ -77,14 +77,14 @@ POST /api/v1/auth/login
 
 ```http
 POST /api/v1/auth/forgot-password
-{ "username":"amina" }   # or email / phone
+{ "username":"<username>" }   # or email / phone
 
 POST /api/v1/auth/verify-otp
 { "challengeId":"…", "code":"…" }
 → { "data": { "purpose":"password_reset", "resetToken":"…" } }
 
 POST /api/v1/auth/reset-password
-{ "resetToken":"…", "password":"NewSecret1" }
+{ "resetToken":"…", "password":"<new-strong-password>" }
 ```
 
 ## Data model (additions)
@@ -177,7 +177,7 @@ That means either:
 
 ```env
 DATABASE_PROVIDER=postgresql
-DATABASE_URL="postgresql://postgres:postgres@localhost:5434/makthab_dev"
+DATABASE_URL="postgresql://USER:PASSWORD@localhost:5434/makthab_dev"
 ```
 
 Note the host port is **5434** (see `docker-compose.yml`), not 5432 or 5433 —
@@ -201,7 +201,7 @@ Equivalent explicit command:
 
 ```powershell
 cd server
-npx cross-env DATABASE_PROVIDER=postgresql DATABASE_URL="postgresql://postgres:postgres@localhost:5434/makthab_dev" prisma migrate deploy --schema=./prisma/schema.prisma
+npx cross-env DATABASE_PROVIDER=postgresql DATABASE_URL="postgresql://USER:PASSWORD@localhost:5434/makthab_dev" prisma migrate deploy --schema=./prisma/schema.prisma
 ```
 
 ## Branch & PR checklist
