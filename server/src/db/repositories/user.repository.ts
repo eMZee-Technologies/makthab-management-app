@@ -174,6 +174,38 @@ export const userRepository = {
       include: { staff: true },
     });
   },
+
+  countByRole(roleName: string) {
+    return prisma.user.count({ where: { role: roleName } });
+  },
+
+  async countByRoles(roleNames: string[]): Promise<Record<string, number>> {
+    if (roleNames.length === 0) return {};
+    const rows = await prisma.user.groupBy({
+      by: ["role"],
+      where: { role: { in: roleNames } },
+      _count: { _all: true },
+    });
+    const out: Record<string, number> = {};
+    for (const name of roleNames) out[name] = 0;
+    for (const row of rows) out[row.role] = row._count._all;
+    return out;
+  },
+
+  /** Move all users (and matching Staff.role labels) from one role name to another. */
+  reassignRoleName(fromRole: string, toRole: string) {
+    return prisma.$transaction(async (tx) => {
+      const users = await tx.user.updateMany({
+        where: { role: fromRole },
+        data: { role: toRole },
+      });
+      const staff = await tx.staff.updateMany({
+        where: { role: fromRole },
+        data: { role: toRole },
+      });
+      return { users: users.count, staff: staff.count };
+    });
+  },
 };
 
 export type { Staff, User };

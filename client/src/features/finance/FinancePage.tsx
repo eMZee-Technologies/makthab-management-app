@@ -23,7 +23,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, formatDate, monthName } from '@/lib/format';
 import { extractApiError } from '@/api/client';
 import { useExpenseCategories } from '@/api/reference';
-import { useAuthStore } from '@/store/authStore';
+import { useCan } from '@/lib/permissions';
 import {
   expenseCreateSchema,
   type ExpenseCreateInput,
@@ -154,8 +154,11 @@ function ExpensesTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
   const [deleting, setDeleting] = useState<Expense | null>(null);
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin';
+  const can = useCan();
+  const canCreate = can('finance', 'create');
+  const canUpdate = can('finance', 'update');
+  const canDelete = can('finance', 'delete');
+  const canAct = canUpdate || canDelete;
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
@@ -205,7 +208,12 @@ function ExpensesTab() {
               </span>
             </div>
           )}
-          <Button onClick={openCreate} className="ms-auto"><Plus className="h-4 w-4" />{t('expenses.add')}</Button>
+          {canCreate && (
+            <Button onClick={openCreate} className="ms-auto">
+              <Plus className="h-4 w-4" />
+              {t('expenses.add')}
+            </Button>
+          )}
         </div>
         {isLoading ? (
           <LoadingRows cols={7} />
@@ -238,7 +246,7 @@ function ExpensesTab() {
                 <SortableTableHead sortKey="amount" sort={sort} onSort={onSort} className="text-end">
                   {t('expenses.amount')}
                 </SortableTableHead>
-                {canManage && <TableHead className="text-end">{t('common.actions')}</TableHead>}
+                {canAct && <TableHead className="text-end">{t('common.actions')}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -253,15 +261,19 @@ function ExpensesTab() {
                   </TableCell>
                   <TableCell className="text-end">{e.quantity ?? '—'}</TableCell>
                   <TableCell className="text-end">{formatCurrency(e.amount, i18n.language)}</TableCell>
-                  {canManage && (
+                  {canAct && (
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => openEdit(e)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setDeleting(e)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {canUpdate && (
+                          <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => openEdit(e)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setDeleting(e)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   )}
@@ -306,8 +318,11 @@ function StaffTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Staff | null>(null);
   const [deleting, setDeleting] = useState<Staff | null>(null);
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin' || role === 'Accountant';
+  const can = useCan();
+  const canCreate = can('finance', 'create');
+  const canUpdate = can('finance', 'update');
+  const canDelete = can('finance', 'delete');
+  const canAct = canUpdate || canDelete;
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
@@ -349,7 +364,7 @@ function StaffTab() {
     <Card>
       <CardContent className="space-y-4 pt-6">
         <div className="flex justify-end">
-          {canManage && (
+          {canCreate && (
             <Button onClick={openCreate}><Plus className="h-4 w-4" />{t('staff.add')}</Button>
           )}
         </div>
@@ -374,7 +389,7 @@ function StaffTab() {
                 </SortableTableHead>
                 <TableHead>{t('staff.contactNo')}</TableHead>
                 <TableHead>{t('common.status')}</TableHead>
-                {canManage && <TableHead className="text-end">{t('common.actions')}</TableHead>}
+                {canAct && <TableHead className="text-end">{t('common.actions')}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -389,15 +404,19 @@ function StaffTab() {
                       {t(`common.${s.status === 'active' ? 'active' : 'inactive'}`)}
                     </Badge>
                   </TableCell>
-                  {canManage && (
+                  {canAct && (
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => openEdit(s)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setDeleting(s)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {canUpdate && (
+                          <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => openEdit(s)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setDeleting(s)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   )}
@@ -442,8 +461,11 @@ function SalariesTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<SalaryPayment | null>(null);
   const [deleting, setDeleting] = useState<SalaryPayment | null>(null);
-  const role = useAuthStore((s) => s.user?.role);
-  const canManage = role === 'Admin' || role === 'Accountant';
+  const can = useCan();
+  const canCreate = can('finance', 'create');
+  const canUpdate = can('finance', 'update');
+  const canDelete = can('finance', 'delete');
+  const canAct = canUpdate || canDelete;
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
@@ -493,7 +515,7 @@ function SalariesTab() {
               </span>
             </div>
           )}
-          {canManage && (
+          {canCreate && (
             <Button onClick={openCreate} className="ms-auto">
               <Plus className="h-4 w-4" />{t('salaries.add')}
             </Button>
@@ -528,7 +550,7 @@ function SalariesTab() {
                 <SortableTableHead sortKey="netAmount" sort={sort} onSort={onSort} className="text-end">
                   {t('salaries.net')}
                 </SortableTableHead>
-                {canManage && <TableHead className="text-end">{t('common.actions')}</TableHead>}
+                {canAct && <TableHead className="text-end">{t('common.actions')}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -540,15 +562,19 @@ function SalariesTab() {
                   <TableCell className="text-end">{formatCurrency(p.grossAmount, i18n.language)}</TableCell>
                   <TableCell className="text-end">{formatCurrency(p.deductions, i18n.language)}</TableCell>
                   <TableCell className="text-end">{formatCurrency(p.netAmount, i18n.language)}</TableCell>
-                  {canManage && (
+                  {canAct && (
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => openEdit(p)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setDeleting(p)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
+                        {canUpdate && (
+                          <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => openEdit(p)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && (
+                          <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setDeleting(p)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   )}

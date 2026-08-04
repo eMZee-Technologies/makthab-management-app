@@ -9,7 +9,7 @@ import {
 import { orgProfileRepository, type OrgProfile } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import {
   uploadOrgImage,
@@ -46,10 +46,10 @@ orgProfileRouter.get(
   })
 );
 
-// GET /org-profile — list all profiles (Admin / org.manage).
+// GET /org-profile — list all profiles.
 orgProfileRouter.get(
   "/",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "view"),
   validateQuery(orgProfileListQuery),
   asyncHandler(async (_req, res) => {
     const q = res.locals.query as OrgProfileListQuery;
@@ -62,7 +62,7 @@ orgProfileRouter.get(
 // POST /org-profile — create a new profile (inactive by default).
 orgProfileRouter.post(
   "/",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "update"),
   validateBody(orgProfileCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof orgProfileCreateSchema._output;
@@ -77,7 +77,7 @@ orgProfileRouter.post(
 // lowest-id row / a constant if that leaves none active).
 orgProfileRouter.patch(
   "/:id",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "update"),
   validateBody(orgProfileUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -94,7 +94,7 @@ orgProfileRouter.patch(
 // activate another first so there's always a letterhead to fall back to.
 orgProfileRouter.delete(
   "/:id",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "update"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await orgProfileRepository.findById(id);
@@ -113,7 +113,7 @@ orgProfileRouter.delete(
 // POST /org-profile/:id/image — upload/replace the header background image.
 orgProfileRouter.post(
   "/:id/image",
-  requirePermission("org.manage"),
+  requireResourcePermission("organisation", "update"),
   uploadOrgImage,
   asyncHandler(async (req, res) => {
     if (!req.file) {

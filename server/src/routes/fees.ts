@@ -12,7 +12,7 @@ import {
 import { feePaymentRepository, studentRepository, feeStructureRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireModuleAccessOrReportsView, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextReceiptNo } from "../lib/docNo";
@@ -25,7 +25,8 @@ import { getStorage, readStoredFile, normalizeStoredKey } from "../lib/storage";
 import { logger } from "../lib/logger";
 export const feesRouter = Router();
 
-feesRouter.use(requireAuth, requirePermission("fees.manage"));
+// Reads also allow reports.view — Reports page tables call /fees list APIs.
+feesRouter.use(requireAuth, requireModuleAccessOrReportsView("fees"));
 
 type FeeWithStudent = Awaited<ReturnType<typeof loadFee>>;
 async function loadFee(id: number) {
@@ -128,6 +129,7 @@ async function deleteReceiptPdf(pdfPath: string | null): Promise<void> {
 // POST /fees — record a payment and generate the receipt PDF.
 feesRouter.post(
   "/",
+  requireResourcePermission("fees", "create"),
   validateBody(feePaymentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof feePaymentCreateSchema._output;
@@ -229,6 +231,7 @@ feesRouter.get(
 // by persisting feeOverrideAmount; returns the recomputed defaulter row.
 feesRouter.patch(
   "/defaulters/:studentId",
+  requireResourcePermission("fees", "update"),
   validateBody(defaulterUpdateSchema),
   asyncHandler(async (req, res) => {
     const studentId = Number(req.params.studentId);
@@ -253,6 +256,7 @@ feesRouter.get(
 
 feesRouter.post(
   "/structures",
+  requireResourcePermission("fees", "create"),
   validateBody(feeStructureCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof feeStructureCreateSchema._output;
@@ -271,6 +275,7 @@ feesRouter.post(
 // DELETE /fees/structures/:id — remove a fee structure entry (Admin + Accountant).
 feesRouter.delete(
   "/structures/:id",
+  requireResourcePermission("fees", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await feeStructureRepository.findById(id);
@@ -305,6 +310,7 @@ feesRouter.get(
 // (it's not part of the update schema, so there's no way to change it here).
 feesRouter.patch(
   "/:id",
+  requireResourcePermission("fees", "update"),
   validateBody(feePaymentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -338,6 +344,7 @@ feesRouter.patch(
 // remove its receipt PDF from disk.
 feesRouter.delete(
   "/:id",
+  requireResourcePermission("fees", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const fee = await feePaymentRepository.findById(id);
@@ -376,6 +383,7 @@ feesRouter.get(
 //     fully automatic, no client-side download/open needed.
 feesRouter.post(
   "/:id/whatsapp",
+  requireResourcePermission("fees", "update"),
   asyncHandler(async (req, res) => {
     const fee = await loadFee(Number(req.params.id));
     if (!fee) throw new AppError(404, "not_found", "Payment not found");

@@ -171,6 +171,7 @@ model User {
   approvalSubjectOf  UserApprovalAudit[]  @relation("ApprovalSubject")
   approvalActorOf    UserApprovalAudit[]  @relation("ApprovalActor")
   notifications      AdminNotification[]
+  rolePermissionAudits RolePermissionAudit[]
 }
 
 // One-time passcode challenge for signup verification and password reset.
@@ -340,15 +341,41 @@ model OrgProfile {
 
 // Application role with an attached permission set. Replaces the former
 // hardcoded 3-value role enum: Admin can now define new roles at runtime.
-// `permissions` is a JSON-encoded array of permission-key strings (see
-// @makthab/shared PERMISSION_CATALOG). isSystem rows (Admin/Accountant/Teacher)
-// are seeded and cannot be deleted. User.role stores the role NAME (unchanged),
-// which is resolved to a permission set at login.
+// `permissions` is JSON — either a legacy permission-key string[] OR a
+// RolePermissions object (`{ mode: "all" }` / `{ mode: "matrix", ... }`);
+// see @makthab/shared adapters. isSystem rows (Admin/Accountant/Teacher) are
+// seeded and cannot be deleted. isFullAccess (Admin) locks full grants and
+// cannot be cleared. permissionsVersion bumps when grants shrink so in-flight
+// access tokens are rejected until refresh. User.role stores the role NAME.
 model Role {
+  id                 Int      @id @default(autoincrement())
+  name               String   @unique
+  permissions        String // JSON: legacy string[] OR RolePermissions object
+  isSystem           Boolean  @default(false)
+  isFullAccess       Boolean  @default(false) // Admin lock — always all permissions
+  permissionsVersion Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  audits RolePermissionAudit[]
+}
+
+// Immutable audit trail of role permission changes (Phase 3).
+// roleId is optional so rows survive role deletion (onDelete: SetNull).
+model RolePermissionAudit {
   id          Int      @id @default(autoincrement())
-  name        String   @unique
-  permissions String // JSON-encoded string[] of permission keys
-  isSystem    Boolean  @default(false)
+  roleId      Int?
+  actorUserId Int
+  action      String // create | update | delete | reassign
+  beforeJson  String? // JSON RolePermissions (null on create)
+  afterJson   String? // JSON RolePermissions (null on delete)
+  metaJson    String? // optional JSON (e.g. reassign target role, roleName)
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  role  Role? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  actor User  @relation(fields: [actorUserId], references: [id])
+
+  @@index([roleId])
+  @@index([actorUserId])
+  @@index([createdAt])
 }

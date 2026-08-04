@@ -24,7 +24,7 @@ import { useUiStore } from '@/store/uiStore';
 import { useDebounce } from '@/lib/useDebounce';
 import { formatDate, computeAge } from '@/lib/format';
 import { extractApiError } from '@/api/client';
-import { useAuthStore } from '@/store/authStore';
+import { useCan } from '@/lib/permissions';
 import { useStudents, useDeleteStudent, downloadAdmissionLetter } from './api';
 import { StudentForm } from './StudentForm';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -43,7 +43,7 @@ export function StudentsPage() {
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
   const q = useDebounce(search);
-  const role = useAuthStore((s) => s.user?.role);
+  const can = useCan();
   const academicYearId = useUiStore((s) => s.academicYearId);
 
   const { data: classes } = useClasses();
@@ -60,7 +60,9 @@ export function StudentsPage() {
     sortOrder: sort.sortBy ? sort.sortOrder : undefined,
   });
 
-  const canManage = role === 'Admin';
+  const canCreate = can('students', 'create');
+  const canUpdate = can('students', 'update');
+  const canDelete = can('students', 'delete');
 
   const onSort = (key: string) => {
     toggle(key);
@@ -101,7 +103,7 @@ export function StudentsPage() {
       <PageHeader
         title={t('students.title')}
         actions={
-          canManage && (
+          canCreate && (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
               {t('students.admit')}
@@ -217,24 +219,28 @@ export function StudentsPage() {
                         <Button variant="ghost" size="icon" title={t('students.admissionLetter')} onClick={() => handleLetter(s)}>
                           <FileText className="h-4 w-4" />
                         </Button>
-                        {canManage && (
+                        {(canUpdate || canDelete) && (
                           <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title={t('common.edit')}
-                              onClick={() => openEdit(s)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title={t('common.delete')}
-                              onClick={() => setDeleting(s)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            {canUpdate && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title={t('common.edit')}
+                                onClick={() => openEdit(s)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {canDelete && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title={t('common.delete')}
+                                onClick={() => setDeleting(s)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
                           </>
                         )}
                       </div>

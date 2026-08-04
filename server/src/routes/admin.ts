@@ -2,14 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { Router } from "express";
 import { asyncHandler } from "../lib/asyncHandler";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourceAny } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { env } from "../lib/env";
 import { DATA_DIR, BACKUPS_DIR, ensureDir } from "../lib/paths";
 
 // Admin-only maintenance endpoints (doc §13.3).
 export const adminRouter = Router();
-adminRouter.use(requireAuth, requirePermission("admin.access"));
+adminRouter.use(requireAuth, requireResourceAny("admin", ["view", "create"]));
 
 /**
  * Resolve the on-disk SQLite file from DATABASE_URL. Prisma resolves

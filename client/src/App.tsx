@@ -30,30 +30,30 @@ export default function App() {
             <Route index element={<DashboardPage />} />
             <Route path="students" element={<StudentsPage />} />
 
-            <Route element={<RequirePermission permission="classes.manage" />}>
+            <Route element={<RequirePermission resource="classes" action="view" />}>
               <Route path="classes" element={<ClassesPage />} />
             </Route>
-            <Route element={<RequirePermission permission="users.manage" />}>
+            <Route element={<RequirePermission resource="users" action="view" />}>
               <Route path="users" element={<UsersPage />} />
             </Route>
-            <Route element={<RequirePermission permission="org.manage" />}>
+            <Route element={<RequirePermission resource="organisation" action="view" />}>
               <Route path="organisation" element={<OrgProfilesPage />} />
             </Route>
-            <Route element={<RequirePermission permission="roles.manage" />}>
+            <Route element={<RequirePermission resource="roles" action="view" />}>
               <Route path="roles" element={<RolesPage />} />
             </Route>
 
-            <Route element={<RequirePermission permission="fees.manage" />}>
+            <Route element={<RequirePermission resource="fees" action="view" />}>
               <Route path="fees" element={<FeesPage />} />
             </Route>
-            <Route element={<RequirePermission permission="finance.manage" />}>
+            <Route element={<RequirePermission resource="finance" action="view" />}>
               <Route path="finance" element={<FinancePage />} />
             </Route>
-            <Route element={<RequirePermission permission="reports.access" />}>
+            <Route element={<RequirePermission resource="reports" action="view" />}>
               <Route path="reports" element={<ReportsPage />} />
             </Route>
 
-            <Route element={<RequirePermission permission="attendance.mark" />}>
+            <Route element={<RequirePermission resource="attendance" action="view" />}>
               <Route path="attendance" element={<AttendancePage />} />
             </Route>
           </Route>

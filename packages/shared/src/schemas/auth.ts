@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { phoneSchema, mobile10Schema } from "./common";
+import { rolePermissionsSchema } from "./role";
 
 // ---- Password policy (self-service flows) ---------------------------------
 // Admin-provisioned passwords stay at min(6) in user.ts for backward compat;
@@ -33,15 +34,15 @@ export const loginRequestSchema = z.object({
 });
 export type LoginRequest = z.infer<typeof loginRequestSchema>;
 
-// role is a plain string now that roles are DB-backed and admin-definable (no
-// longer the fixed 3-value enum). permissions is the resolved permission-key
-// set for the logged-in user — the source of truth for client-side gating.
+// role is a plain string now that roles are DB-backed and admin-definable.
+// permissionMatrix is the source of truth for client/server gating (Phase 3).
 export const authUserSchema = z.object({
   id: z.number().int(),
   fullName: z.string(),
   username: z.string(),
   role: z.string(),
-  permissions: z.array(z.string()),
+  permissionMatrix: rolePermissionsSchema,
+  permissionsVersion: z.number().int().nonnegative().default(0),
 });
 export type AuthUser = z.infer<typeof authUserSchema>;
 

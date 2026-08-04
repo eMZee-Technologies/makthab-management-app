@@ -23,15 +23,16 @@ import {
 } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourceAny, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 
 // ---- Users (Admin only) ----------------------------------------------------
 // Account/access management: stricter than /staff (no Accountant). A "user" is a
 // User login joined 1:1 to a Staff record; contactNo/whatsappNo/address/photo
 // live on Staff, username/email/role/status/password on User.
+// Router entry allows view (and writes); mutating routes add exact action guards.
 export const usersRouter = Router();
-usersRouter.use(requireAuth, requirePermission("users.manage"));
+usersRouter.use(requireAuth, requireResourceAny("users", ["view", "create", "update", "delete"]));
 
 // Flatten a User + its linked Staff into the shared UserDto shape.
 function toUserDto(user: User & { staff: Staff }): UserDto {
@@ -101,6 +102,7 @@ usersRouter.post(
 
 usersRouter.post(
   "/",
+  requireResourcePermission("users", "create"),
   validateBody(userCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof userCreateSchema._output;
@@ -131,6 +133,7 @@ usersRouter.post(
 
 usersRouter.patch(
   "/:id",
+  requireResourcePermission("users", "update"),
   validateBody(userUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -172,6 +175,7 @@ usersRouter.patch(
 // POST /users/:id/approve — activate a pending_approval signup; write audit row.
 usersRouter.post(
   "/:id/approve",
+  requireResourcePermission("users", "update"),
   validateBody(userApproveSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -207,6 +211,7 @@ usersRouter.post(
 // POST /users/:id/reject — reject a pending signup; write audit row.
 usersRouter.post(
   "/:id/reject",
+  requireResourcePermission("users", "update"),
   validateBody(userRejectSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -258,6 +263,7 @@ usersRouter.get(
 // DELETE /users/:id — soft delete (User.status = inactive).
 usersRouter.delete(
   "/:id",
+  requireResourcePermission("users", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await userRepository.findById(id);
@@ -273,6 +279,7 @@ usersRouter.delete(
 // POST /users/:id/reset-password — set a new password (Admin only).
 usersRouter.post(
   "/:id/reset-password",
+  requireResourcePermission("users", "update"),
   validateBody(userPasswordResetSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);

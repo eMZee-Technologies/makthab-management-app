@@ -36,9 +36,10 @@ async function refreshAccessToken(): Promise<string> {
     { refreshToken },
     { withCredentials: true },
   );
-  const token: string | undefined = resp.data?.data?.accessToken ?? resp.data?.accessToken;
+  const data = resp.data?.data ?? resp.data;
+  const token: string | undefined = data?.accessToken;
   if (!token) throw new Error('No access token in refresh response');
-  authTokenGetters.setToken(token);
+  authTokenGetters.setSession(token, data?.refreshToken, data?.user);
   return token;
 }
 

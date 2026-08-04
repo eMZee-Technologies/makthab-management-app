@@ -21,6 +21,7 @@ import { SortableTableHead, useSort } from '@/components/SortableTableHead';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/ui/use-toast';
 import { api, extractApiError } from '@/api/client';
+import { useCan } from '@/lib/permissions';
 import { useUsers, useDeleteUser, useReactivateUser, useApproveUser, useRejectUser } from './api';
 import { useRoles } from '../roles/api';
 import { UserForm } from './UserForm';
@@ -72,6 +73,11 @@ function UserAvatar({ user }: { user: User }) {
 export function UsersPage() {
   const { t } = useTranslation();
   const { toast } = useToast();
+  const can = useCan();
+  const canCreate = can('users', 'create');
+  const canUpdate = can('users', 'update');
+  const canDelete = can('users', 'delete');
+  const canAct = canUpdate || canDelete;
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [resetting, setResetting] = useState<User | null>(null);
@@ -157,10 +163,12 @@ export function UsersPage() {
       <PageHeader
         title={t('users.title')}
         actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            {t('users.add')}
-          </Button>
+          canCreate && (
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              {t('users.add')}
+            </Button>
+          )
         }
       />
 
@@ -234,7 +242,7 @@ export function UsersPage() {
                   <SortableTableHead sortKey="status" sort={sort} onSort={onSort}>
                     {t('common.status')}
                   </SortableTableHead>
-                  <TableHead className="text-end">{t('common.actions')}</TableHead>
+                  {canAct && <TableHead className="text-end">{t('common.actions')}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -263,9 +271,10 @@ export function UsersPage() {
                         {u.status}
                       </Badge>
                     </TableCell>
+                    {canAct && (
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        {u.status === 'pending_approval' && (
+                        {canUpdate && u.status === 'pending_approval' && (
                           <>
                             <Button
                               variant="ghost"
@@ -285,23 +294,27 @@ export function UsersPage() {
                             </Button>
                           </>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title={t('common.edit')}
-                          onClick={() => openEdit(u)}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title={t('users.resetPassword')}
-                          onClick={() => setResetting(u)}
-                        >
-                          <KeyRound className="h-4 w-4" />
-                        </Button>
-                        {u.status === 'active' ? (
+                        {canUpdate && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={t('common.edit')}
+                            onClick={() => openEdit(u)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canUpdate && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={t('users.resetPassword')}
+                            onClick={() => setResetting(u)}
+                          >
+                            <KeyRound className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {canDelete && u.status === 'active' ? (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -310,7 +323,7 @@ export function UsersPage() {
                           >
                             <UserX className="h-4 w-4 text-destructive" />
                           </Button>
-                        ) : u.status === 'inactive' ? (
+                        ) : canUpdate && u.status === 'inactive' ? (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -322,6 +335,7 @@ export function UsersPage() {
                         ) : null}
                       </div>
                     </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

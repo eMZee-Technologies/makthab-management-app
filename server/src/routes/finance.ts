@@ -17,7 +17,7 @@ import {
 import { expenseRepository, expenseCategoryRepository, staffRepository, userRepository, salaryPaymentRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
-import { requireAuth, requireRole, requirePermission } from "../middleware/auth";
+import { requireAuth, requireResourcePermission, requireResourceAny, requireModuleAccessOrReportsView, requireResourceReadOrMutate } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
 import { actorStaffId } from "../lib/actor";
 import { nextVoucherNo } from "../lib/docNo";
@@ -33,10 +33,12 @@ import {
 import { streamStoredFile } from "../lib/storage";
 // ---- Expenses (Admin, Accountant) ------------------------------------------
 export const expensesRouter = Router();
-expensesRouter.use(requireAuth, requirePermission("finance.manage"));
+// Reads also allow reports.view — Reports expense tab lists via /expenses.
+expensesRouter.use(requireAuth, requireModuleAccessOrReportsView("finance"));
 
 expensesRouter.post(
   "/",
+  requireResourcePermission("finance", "create"),
   validateBody(expenseCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof expenseCreateSchema._output;
@@ -57,11 +59,10 @@ expensesRouter.post(
   })
 );
 
-// PATCH /expenses/:id — edit an entry (Admin only). amount is re-derived from
-// the effective cost * quantity; a client-sent amount is never trusted.
+// PATCH /expenses/:id — edit an entry (requires finance.update).
 expensesRouter.patch(
   "/:id",
-  requireRole("Admin"),
+  requireResourcePermission("finance", "update"),
   validateBody(expenseUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -90,10 +91,10 @@ expensesRouter.patch(
   })
 );
 
-// DELETE /expenses/:id — hard delete (Admin only). No model FKs onto Expense.
+// DELETE /expenses/:id — hard delete (requires finance.delete).
 expensesRouter.delete(
   "/:id",
-  requireRole("Admin"),
+  requireResourcePermission("finance", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await expenseRepository.findById(id);
@@ -133,7 +134,7 @@ expensesRouter.get(
 
 // ---- Staff (Admin, Accountant) ---------------------------------------------
 export const staffRouter = Router();
-staffRouter.use(requireAuth, requirePermission("finance.manage"));
+staffRouter.use(requireAuth, requireResourceReadOrMutate("finance"));
 
 staffRouter.get(
   "/",
@@ -147,7 +148,7 @@ staffRouter.get(
 
 staffRouter.post(
   "/",
-  requireRole("Admin"),
+  requireResourcePermission("finance", "create"),
   validateBody(staffCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof staffCreateSchema._output;
@@ -178,6 +179,7 @@ staffRouter.post(
 // Students page, which is Admin-only). Login provisioning is not edited here.
 staffRouter.patch(
   "/:id",
+  requireResourcePermission("finance", "update"),
   validateBody(staffUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -195,6 +197,7 @@ staffRouter.patch(
 // (double-click, retry) should succeed quietly rather than surface an error.
 staffRouter.delete(
   "/:id",
+  requireResourcePermission("finance", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await staffRepository.findById(id);
@@ -207,6 +210,7 @@ staffRouter.delete(
 // POST /staff/:id/photo — upload/replace the staff photo.
 staffRouter.post(
   "/:id/photo",
+  requireResourcePermission("finance", "update"),
   uploadStaffPhoto,
   asyncHandler(async (req, res) => {
     if (!req.file) {
@@ -248,6 +252,7 @@ staffRouter.get(
 // image (JPEG only — stamped onto fee receipts, see lib/pdf.ts).
 staffRouter.post(
   "/:id/signature",
+  requireResourcePermission("finance", "update"),
   uploadStaffSignature,
   asyncHandler(async (req, res) => {
     if (!req.file) {
@@ -282,7 +287,8 @@ staffRouter.get(
 
 // ---- Salaries (Admin, Accountant) ------------------------------------------
 export const salariesRouter = Router();
-salariesRouter.use(requireAuth, requirePermission("finance.manage"));
+// Reads also allow reports.view — Reports salaries tab lists via /salaries.
+salariesRouter.use(requireAuth, requireModuleAccessOrReportsView("finance"));
 
 salariesRouter.get(
   "/",
@@ -298,6 +304,7 @@ salariesRouter.get(
 // server-side as max(0, gross - deductions); a client-sent value is never trusted.
 salariesRouter.post(
   "/",
+  requireResourcePermission("finance", "create"),
   validateBody(salaryPaymentCreateSchema),
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof salaryPaymentCreateSchema._output;
@@ -329,6 +336,7 @@ salariesRouter.post(
 // re-derived from the effective gross/deductions; a client-sent net is ignored.
 salariesRouter.patch(
   "/:id",
+  requireResourcePermission("finance", "update"),
   validateBody(salaryPaymentUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
@@ -360,6 +368,7 @@ salariesRouter.patch(
 // DELETE /salaries/:id — hard delete (Admin + Accountant). No model FKs onto it.
 salariesRouter.delete(
   "/:id",
+  requireResourcePermission("finance", "delete"),
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const existing = await salaryPaymentRepository.findById(id);
