@@ -1,8 +1,15 @@
 variable "project" { type = string }
 variable "environment" { type = string }
+variable "kms_key_arn" {
+  type        = string
+  description = "Customer-managed KMS key ARN for SSE-KMS (null → AES256)"
+  default     = null
+}
 
 locals {
-  name = "${var.project}-${var.environment}"
+  name         = "${var.project}-${var.environment}"
+  use_kms      = var.kms_key_arn != null
+  sse_algorithm = local.use_kms ? "aws:kms" : "AES256"
 }
 
 resource "aws_s3_bucket" "files" {
@@ -19,8 +26,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "files" {
   bucket = aws_s3_bucket.files.id
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = local.sse_algorithm
+      kms_master_key_id = local.use_kms ? var.kms_key_arn : null
     }
+    bucket_key_enabled = local.use_kms
   }
 }
 
@@ -62,8 +71,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "client" {
   bucket = aws_s3_bucket.client.id
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = local.sse_algorithm
+      kms_master_key_id = local.use_kms ? var.kms_key_arn : null
     }
+    bucket_key_enabled = local.use_kms
   }
 }
 

@@ -8,6 +8,7 @@ db_username         = "makthab"
 # db_password       = "set-via-TF_VAR_db_password or -var"
 # jwt_secret        = "..."
 # jwt_refresh_secret = "..."
+# backup_internal_token = "..."  # X-Makthab-Backup-Token for POST /admin/backup
 desired_count       = 1
 use_nat_gateway     = false
 # client_domain     = "app.example.com"

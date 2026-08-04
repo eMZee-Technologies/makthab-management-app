@@ -181,6 +181,20 @@ export async function recordAudit(input: RecordAuditInput): Promise<void> {
           contentHash,
           prevHash,
         });
+        // Structured security event for CloudWatch metric filters (§7).
+        if (
+          input.action === "login" ||
+          input.action === "backup" ||
+          input.action === "authz_denied" ||
+          input.action === "revoke"
+        ) {
+          logger.info("security_event", {
+            action: input.action,
+            outcome: input.outcome,
+            entity: input.entity,
+            userId: input.userId ?? null,
+          });
+        }
         noteVolume();
         return;
       } catch (err) {

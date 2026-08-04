@@ -10,6 +10,7 @@ import {
 import { verifyAccessToken, type AccessTokenPayload } from "../lib/jwt";
 import { roleRepository } from "../db";
 import { AppError } from "./errorHandler";
+import { clientMeta, recordAudit } from "../lib/audit/auditLog";
 
 function normalizePayload(payload: AccessTokenPayload): AccessTokenPayload {
   if (payload.permissionMatrix) return payload;
@@ -34,6 +35,29 @@ function normalizePayload(payload: AccessTokenPayload): AccessTokenPayload {
 
 function heldMatrix(req: Request): RolePermissions | undefined {
   return req.user?.permissionMatrix;
+}
+
+/** Fire-and-forget authz denial audit (security redesign §7). */
+function auditAuthzDenied(req: Request, reason: string): void {
+  const meta = clientMeta(req);
+  void recordAudit({
+    userId: req.user?.sub ?? null,
+    action: "authz_denied",
+    entity: "auth",
+    outcome: "failure",
+    additionalDetails: {
+      path: req.originalUrl || req.path,
+      method: req.method,
+      role: req.user?.role,
+      reason,
+    },
+    ...meta,
+  });
+}
+
+function forbid(req: Request, reason: string): never {
+  auditAuthzDenied(req, reason);
+  throw new AppError(403, "forbidden", "Insufficient permissions for this action");
 }
 
 // Verify the Bearer access token, normalize dual-read payloads, reject stale
@@ -76,7 +100,7 @@ export function requireRole(...roles: string[]) {
       throw new AppError(401, "unauthorized", "Authentication required");
     }
     if (!roles.includes(req.user.role)) {
-      throw new AppError(403, "forbidden", "Insufficient role for this action");
+      forbid(req, `requireRole:${roles.join(",")}`);
     }
     next();
   };
@@ -89,7 +113,7 @@ export function requireResourcePermission(resource: ResourceKey, action: Action)
       throw new AppError(401, "unauthorized", "Authentication required");
     }
     if (!can(heldMatrix(req), resource, action)) {
-      throw new AppError(403, "forbidden", "Insufficient permissions for this action");
+      forbid(req, `requireResourcePermission:${resource}.${action}`);
     }
     next();
   };
@@ -102,7 +126,7 @@ export function requireResourceAny(resource: ResourceKey, actions: Action[]) {
       throw new AppError(401, "unauthorized", "Authentication required");
     }
     if (!actions.some((action) => can(heldMatrix(req), resource, action))) {
-      throw new AppError(403, "forbidden", "Insufficient permissions for this action");
+      forbid(req, `requireResourceAny:${resource}.${actions.join("|")}`);
     }
     next();
   };
@@ -141,7 +165,7 @@ export function requireModuleAccessOrReportsView(resource: ResourceKey) {
       next();
       return;
     }
-    throw new AppError(403, "forbidden", "Insufficient permissions for this action");
+    forbid(req, `requireModuleAccessOrReportsView:${resource}`);
   };
 }
 
@@ -175,7 +199,7 @@ export function requireResourceReadOrMutate(resource: ResourceKey) {
       next();
       return;
     }
-    throw new AppError(403, "forbidden", "Insufficient permissions for this action");
+    forbid(req, `requireResourceReadOrMutate:${resource}`);
   };
 }
 
@@ -196,6 +220,6 @@ export function requirePermission(...keys: string[]) {
       next();
       return;
     }
-    throw new AppError(403, "forbidden", "Insufficient permissions for this action");
+    forbid(req, `requirePermission:${keys.join(",")}`);
   };
 }

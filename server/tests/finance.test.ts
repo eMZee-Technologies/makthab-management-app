@@ -115,7 +115,7 @@ describeApi("finance (expenses/staff/salaries)", () => {
       .set(bearer(token))
       .attach("signature", jpeg, { filename: "s.jpg", contentType: "image/jpeg" });
     expect(r.status).toBe(200);
-    expect(r.body.data.signaturePath).toMatch(/^photos\/staff-.*-signature-/);
+    expect(r.body.data.signaturePath).toMatch(/^photos\/staff-.*-sig-/);
   });
 
   it("GET /staff/:id/signature -> streams the stored image", async () => {

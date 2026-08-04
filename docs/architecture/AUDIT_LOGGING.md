@@ -49,9 +49,10 @@ Migration: `server/prisma/migrations/20260804180000_audit_log/` (and SQLite twin
 
 - `recordAudit` / `recordAuditFromRequest` in `server/src/lib/audit/auditLog.ts`.
 - Never throws to callers (audit must not break primary flows).
-- Wired today for: **login** success/failure, **student** create/update/delete,
-  **fee** create, **admin backup**, **purge**. Extend the same helper on other
-  routers as needed.
+- Wired today for: **login** success/failure, **refresh** success/failure,
+  **logout**, **revoke** (admin force-logout), **authz_denied** (403 probes),
+  **student** create/update/delete, **fee** create, **admin backup**, **purge**.
+  Extend the same helper on other routers as needed.
 
 ### Admin API (`admin.view` / `admin.create`)
 

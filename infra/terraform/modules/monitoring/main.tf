@@ -8,6 +8,11 @@ variable "alarm_email" {
   type    = string
   default = ""
 }
+variable "log_group_name" {
+  type        = string
+  description = "ECS API CloudWatch log group name for metric filters"
+  default     = ""
+}
 
 locals {
   name      = "${var.project}-${var.environment}"
@@ -105,6 +110,63 @@ resource "aws_budgets_budget" "monthly" {
     notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.alarm_email]
   }
+}
+
+# --- Security-relevant metric filters (Phase 3 §7) ---------------------------
+# Login failure spikes and admin backup invocations, when log group is wired.
+
+resource "aws_cloudwatch_log_metric_filter" "login_failures" {
+  count          = var.log_group_name != "" ? 1 : 0
+  name           = "${local.name}-login-failures"
+  log_group_name = var.log_group_name
+  pattern        = "{ $.action = \"login\" && $.outcome = \"failure\" }"
+  metric_transformation {
+    name      = "LoginFailureCount"
+    namespace = "Makthab/${var.environment}"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "login_failure_spike" {
+  count               = var.log_group_name != "" ? 1 : 0
+  alarm_name          = "${local.name}-login-failure-spike"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "LoginFailureCount"
+  namespace           = "Makthab/${var.environment}"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 20
+  treat_missing_data  = "notBreaching"
+  alarm_description   = "Login failure spike (possible credential stuffing)"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
+}
+
+resource "aws_cloudwatch_log_metric_filter" "admin_backup" {
+  count          = var.log_group_name != "" ? 1 : 0
+  name           = "${local.name}-admin-backup"
+  log_group_name = var.log_group_name
+  pattern        = "{ $.action = \"backup\" }"
+  metric_transformation {
+    name      = "AdminBackupCount"
+    namespace = "Makthab/${var.environment}"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "admin_backup" {
+  count               = var.log_group_name != "" ? 1 : 0
+  alarm_name          = "${local.name}-admin-backup"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "AdminBackupCount"
+  namespace           = "Makthab/${var.environment}"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 1
+  treat_missing_data  = "notBreaching"
+  alarm_description   = "Informational: admin/backup was invoked"
+  alarm_actions       = [aws_sns_topic.alarms.arn]
 }
 
 output "sns_topic_arn" { value = aws_sns_topic.alarms.arn }

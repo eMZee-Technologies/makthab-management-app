@@ -10,6 +10,10 @@ variable "db_password" {
   type      = string
   sensitive = true
 }
+variable "kms_key_arn" {
+  type        = string
+  description = "Customer-managed KMS key ARN for RDS storage encryption"
+}
 
 locals {
   name = "${var.project}-${var.environment}"
@@ -59,6 +63,7 @@ resource "aws_db_instance" "this" {
   skip_final_snapshot        = var.environment != "production"
   final_snapshot_identifier  = var.environment == "production" ? "${local.name}-final" : null
   storage_encrypted          = true
+  kms_key_id                 = var.kms_key_arn
   auto_minor_version_upgrade = true
   tags                       = { Name = "${local.name}-rds" }
 }

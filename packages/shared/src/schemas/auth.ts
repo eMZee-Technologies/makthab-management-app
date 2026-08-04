@@ -59,6 +59,17 @@ export const refreshRequestSchema = z.object({
 });
 export type RefreshRequest = z.infer<typeof refreshRequestSchema>;
 
+// POST /auth/logout — revoke the presented refresh token and/or all sessions.
+// `.default({})` so clients may POST with an empty/missing body.
+export const logoutRequestSchema = z
+  .object({
+    refreshToken: z.string().min(1).optional(),
+    /** When true and a valid access token is presented, revoke every session. */
+    allDevices: z.boolean().optional(),
+  })
+  .default({});
+export type LogoutRequest = z.infer<typeof logoutRequestSchema>;
+
 // POST /auth/signup — register with email and/or phone; account stays inactive
 // until OTP verify + admin approval.
 export const signupRequestSchema = z

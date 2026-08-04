@@ -57,6 +57,12 @@ variable "jwt_refresh_secret" {
   sensitive = true
 }
 
+variable "backup_internal_token" {
+  type        = string
+  sensitive   = true
+  description = "Shared secret injected as BACKUP_INTERNAL_TOKEN (X-Makthab-Backup-Token)."
+}
+
 variable "container_image" {
   type        = string
   description = "Full ECR image URI including tag (updated by CI on deploy)."

@@ -38,6 +38,8 @@ export { rolePermissionAuditRepository } from "./repositories/role-permission-au
 export type { RolePermissionAudit } from "./repositories/role-permission-audit.repository";
 export { auditLogRepository } from "./repositories/audit-log.repository";
 export type { AuditLog } from "./repositories/audit-log.repository";
+export { refreshSessionRepository } from "./repositories/refresh-session.repository";
+export type { RefreshSession } from "./repositories/refresh-session.repository";
 
 export { isUniqueConstraintError } from "./client";
 export type { Prisma } from "./types";
