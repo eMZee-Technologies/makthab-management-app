@@ -5,6 +5,20 @@
 # host via `npm run dev -w server` / `DATABASE_PROVIDER=postgresql npm run
 # dev -w server`.
 #
+# Host port 5434 (not 5432/5433): if you have PostgreSQL installed natively
+# on Windows (common with the EDB installer, which registers it as an
+# auto-starting service), it typically claims 5432 and/or 5433 first. A
+# container "publishing" an already-claimed host port can appear to start
+# fine while every connection actually reaches the native service instead —
+# `docker compose exec`/`docker cp` still work (those go straight into the
+# container, bypassing the host port entirely), so backups/restores done
+# that way silently target the wrong database. Check what's actually
+# listening before assuming this container owns a port:
+#   Get-NetTCPConnection -State Listen | Where LocalPort -in 5432,5433,5434
+#   Get-Process -Id <OwningProcess>
+# If DATABASE_URL (server/.env) doesn't point at 127.0.0.1:5434, this
+# container isn't the database the app is using.
+#
 # The `app` service is opt-in (profile "full") and exists to exercise the
 # containerized Dockerfile.txt entrypoint end-to-end locally — the same
 # migrate/seed-gate/healthcheck flow used in production — before pushing a
@@ -24,7 +38,8 @@ services:
       POSTGRES_DB: makthab_dev
     ports:
       # Bind to loopback only — do not publish Postgres on all interfaces.
-      - "127.0.0.1:5433:5432"
+      # Port 5434, not 5432/5433 — see the comment above.
+      - "127.0.0.1:5434:5432"
     volumes:
       - makthab_pg_data:/var/lib/postgresql/data
     healthcheck:

@@ -60,9 +60,21 @@ for the full rationale and architecture.
 ```bash
 docker compose up -d
 ```
-Creates a `postgres:16-alpine` container on port **5433** (not 5432, to avoid
-clashing with any host-installed Postgres). Default credentials:
-`postgres` / `postgres`, database `makthab_dev`.
+Creates a `postgres:16-alpine` container on port **5434** (not 5432 or 5433 —
+the EDB Windows installer commonly registers natively-installed PostgreSQL
+versions as auto-starting services on exactly those ports, e.g. PG17 on 5432
+and PG18 on 5433; a Docker container "publishing" an already-claimed host
+port can appear to start fine while every real connection actually reaches
+the native service instead). Default credentials: `postgres` / `postgres`,
+database `makthab_dev`.
+
+If you're not sure whether something already owns a port, check before
+trusting `docker compose up`'s success message:
+
+```powershell
+Get-NetTCPConnection -State Listen | Where LocalPort -in 5432,5433,5434
+Get-Process -Id <OwningProcess>   # confirm it's actually this container
+```
 
 ### 2. Set the provider and connection string
 
@@ -70,10 +82,12 @@ Two env vars control which database the app uses:
 
 ```bash
 DATABASE_PROVIDER=postgresql
-DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5434/makthab_dev"
 ```
 
-You can set these in `server/.env`, or pass them inline with `cross-env`.
+You can set these in `server/.env`, or pass them inline with `cross-env`. If
+you're using a natively-installed Postgres instead of this Docker container,
+point `DATABASE_URL` at whatever host/port that service actually listens on.
 
 ### 3. Migrate and seed
 

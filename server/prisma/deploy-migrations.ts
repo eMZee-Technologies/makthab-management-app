@@ -32,7 +32,7 @@ if (!fs.existsSync(envPath)) {
     `[db:deploy] No .env at ${envPath}\n` +
       `  Copy server/.env.example → server/.env and set Postgres values for docker compose:\n` +
       `    DATABASE_PROVIDER=postgresql\n` +
-      `    DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev"`
+      `    DATABASE_URL="postgresql://postgres:postgres@localhost:5434/makthab_dev"`
   );
   process.exit(1);
 }
@@ -67,7 +67,7 @@ function resolveProvider(): Provider {
         `  Edit ${envPath} so both agree.\n` +
         `  Docker Compose Postgres (host):\n` +
         `    DATABASE_PROVIDER=postgresql\n` +
-        `    DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev"\n` +
+        `    DATABASE_URL="postgresql://postgres:postgres@localhost:5434/makthab_dev"\n` +
         `  Or force Postgres migrate:  npm run db:deploy:pg -w server`
     );
     process.exit(1);
@@ -90,8 +90,8 @@ console.log(`[db:deploy] prisma migrate deploy --schema=${schema}`);
 if (provider === "postgresql" && !/^postgres(ql)?:\/\//.test(url)) {
   console.error(
     `[db:deploy] PostgreSQL requires DATABASE_URL starting with postgresql://\n` +
-      `  For docker compose up (port 5433):\n` +
-      `  DATABASE_URL="postgresql://postgres:postgres@localhost:5433/makthab_dev"`
+      `  For docker compose up (port 5434):\n` +
+      `  DATABASE_URL="postgresql://postgres:postgres@localhost:5434/makthab_dev"`
   );
   process.exit(1);
 }
