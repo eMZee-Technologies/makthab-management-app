@@ -11,6 +11,11 @@ import { apiRouter } from "./routes";
 export function createApp(): Express {
   const app = express();
 
+  // ALB / reverse proxies set X-Forwarded-For — needed for accurate rate-limit keys.
+  if (isProd) {
+    app.set("trust proxy", 1);
+  }
+
   app.use(
     cors({
       origin: env.clientOrigin,
@@ -22,7 +27,8 @@ export function createApp(): Express {
       exposedHeaders: ["Content-Disposition"],
     })
   );
-  app.use(express.json());
+  // Explicit size cap (security redesign §3.2) — Zod validates shape, not bulk.
+  app.use(express.json({ limit: env.jsonBodyLimit }));
   app.use(cookieParser());
 
   app.get("/health", (_req, res) => {

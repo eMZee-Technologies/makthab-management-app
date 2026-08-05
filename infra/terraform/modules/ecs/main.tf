@@ -12,11 +12,17 @@ variable "memory" { type = number }
 variable "desired_count" { type = number }
 variable "files_bucket_name" { type = string }
 variable "files_bucket_arn" { type = string }
+variable "kms_key_arn" {
+  type        = string
+  description = "CMK used for S3 SSE-KMS — granted to the task role"
+  default     = null
+}
 variable "secret_arns" {
   type = object({
-    database_url       = string
-    jwt_secret         = string
-    jwt_refresh_secret = string
+    database_url          = string
+    jwt_secret            = string
+    jwt_refresh_secret    = string
+    backup_internal_token = string
   })
 }
 variable "client_origin" { type = string }
@@ -77,14 +83,26 @@ resource "aws_iam_role_policy" "task_s3" {
   role = aws_iam_role.task.id
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
-      Resource = [
-        var.files_bucket_arn,
-        "${var.files_bucket_arn}/*",
-      ]
-    }]
+    Statement = concat(
+      [{
+        Effect = "Allow"
+        Action = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
+        Resource = [
+          var.files_bucket_arn,
+          "${var.files_bucket_arn}/*",
+        ]
+      }],
+      var.kms_key_arn != null ? [{
+        Effect = "Allow"
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:DescribeKey",
+        ]
+        Resource = [var.kms_key_arn]
+      }] : []
+    )
   })
 }
 
@@ -161,6 +179,7 @@ resource "aws_ecs_task_definition" "api" {
       { name = "DATABASE_URL", valueFrom = var.secret_arns.database_url },
       { name = "JWT_SECRET", valueFrom = var.secret_arns.jwt_secret },
       { name = "JWT_REFRESH_SECRET", valueFrom = var.secret_arns.jwt_refresh_secret },
+      { name = "BACKUP_INTERNAL_TOKEN", valueFrom = var.secret_arns.backup_internal_token },
     ]
     logConfiguration = {
       logDriver = "awslogs"
@@ -210,7 +229,9 @@ resource "aws_ecs_service" "api" {
 }
 
 output "alb_dns_name" { value = aws_lb.api.dns_name }
+output "alb_arn" { value = aws_lb.api.arn }
 output "alb_arn_suffix" { value = aws_lb.api.arn_suffix }
 output "cluster_name" { value = aws_ecs_cluster.this.name }
 output "service_name" { value = aws_ecs_service.api.name }
 output "task_definition_arn" { value = aws_ecs_task_definition.api.arn }
+output "log_group_name" { value = aws_cloudwatch_log_group.api.name }

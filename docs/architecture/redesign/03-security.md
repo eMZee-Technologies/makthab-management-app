@@ -1,11 +1,36 @@
 # Makthab v3 — Security Architecture (Phase 3)
 
-**Status:** Proposal / discussion document. Nothing here is implemented yet.
+**Status:** Implemented (application hardening + secure-SDLC CI + Terraform controls).
+Infra apply to a live AWS account remains an ops step — see
+[`infra/terraform/README.md`](../../../infra/terraform/README.md).
 **Depends on:** [01-multi-database-support.md](./01-multi-database-support.md) (Postgres),
 [02-cloud-deployment-aws.md](./02-cloud-deployment-aws.md) (ECS Fargate, RDS PostgreSQL,
 S3, Secrets Manager, VPC with public/private subnets).
 **Feeds into:** [04-multi-tenant-architecture.md](./04-multi-tenant-architecture.md) — every
 control here is a precondition for tenancy, since tenancy multiplies the blast radius of any gap.
+
+---
+
+## Implementation status (vs this document)
+
+| Area | Status |
+|---|---|
+| Refresh-token sessions + revocation (`RefreshSession`, jti, rotate on refresh, logout, admin force-logout) | Done |
+| Rate limiting on login/refresh (+ IP+username on login) | Done |
+| `express.json({ limit })`, CORS locked to `CLIENT_ORIGIN` | Done |
+| Upload magic-byte check + randomized storage keys | Done |
+| `admin/backup` second factor (`BACKUP_INTERNAL_TOKEN` / `X-Makthab-Backup-Token`) | Done |
+| Audit logging (auth, authz_denied, backup, financial mutations) | Done (see `AUDIT_LOGGING.md`) |
+| Authorization + revocation test suites in CI | Done |
+| Dependabot + `npm audit --audit-level=high` + Semgrep SAST in CI | Done |
+| Secrets Manager for JWT/DB/backup token (Terraform) | Done |
+| VPC / SGs / endpoints (Phase 2) | Done |
+| WAF managed rules on ALB | Done (Terraform module) |
+| Customer-managed KMS for RDS + S3 | Done (Terraform module) |
+| CloudWatch login-failure / backup alarms | Done (metric filters) |
+| JWT secret auto-rotation Lambda | Fast-follow (manual rotation OK) |
+| Least-privilege app DB role (non-master) | Fast-follow |
+| External pen test | Optional / ops |
 
 ---
 

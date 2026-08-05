@@ -67,6 +67,18 @@ export const errorHandler = (
     });
   }
 
+  // express.json({ limit }) — PayloadTooLargeError
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    ((err as { type?: string }).type === "entity.too.large" ||
+      (err as { status?: number }).status === 413)
+  ) {
+    return res.status(413).json({
+      error: { code: "payload_too_large", message: "Request body too large" },
+    });
+  }
+
   logger.error(err instanceof Error ? err : new Error(String(err)));
   return res.status(500).json({
     error: { code: "internal_error", message: "Internal server error" },

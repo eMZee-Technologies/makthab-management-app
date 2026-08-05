@@ -348,6 +348,24 @@ salariesRouter.patch(
       const staff = await staffRepository.findById(dto.staffId);
       if (!staff) throw new AppError(404, "not_found", "Staff not found");
     }
+
+    // Same (staffId, month, year) pre-check as POST, so a colliding edit
+    // returns a clean 409 rather than an uncaught Prisma unique-constraint
+    // error. Only needed when one of the three actually changes.
+    const staffId = dto.staffId ?? existing.staffId;
+    const salaryMonth = dto.salaryMonth ?? existing.salaryMonth;
+    const salaryYear = dto.salaryYear ?? existing.salaryYear;
+    if (
+      staffId !== existing.staffId ||
+      salaryMonth !== existing.salaryMonth ||
+      salaryYear !== existing.salaryYear
+    ) {
+      const duplicate = await salaryPaymentRepository.findDuplicate(staffId, salaryMonth, salaryYear);
+      if (duplicate && duplicate.id !== id) {
+        throw new AppError(409, "duplicate", "A salary payment already exists for this staff/month/year");
+      }
+    }
+
     const grossAmount = dto.grossAmount ?? existing.grossAmount;
     const deductions = dto.deductions ?? existing.deductions;
     const netAmount = Math.max(0, grossAmount - deductions);

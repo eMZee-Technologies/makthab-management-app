@@ -117,6 +117,15 @@ export const env = {
   ),
   /** Cron expression for the retention purge (default: daily 03:15). */
   auditLogPurgeCron: process.env.AUDIT_LOG_PURGE_CRON ?? "15 3 * * *",
+  /**
+   * Second factor for POST /admin/backup (Phase 3). When set, callers must
+   * send matching `X-Makthab-Backup-Token`. Required in production — without
+   * it the backup route refuses to run (503). Local/dev/test may omit it and
+   * rely on Admin permission alone.
+   */
+  backupInternalToken: process.env.BACKUP_INTERNAL_TOKEN || undefined,
+  /** JSON body size limit for express.json (default 1mb per security redesign). */
+  jsonBodyLimit: process.env.JSON_BODY_LIMIT ?? "1mb",
 };
 
 export const isProd = env.nodeEnv === "production";

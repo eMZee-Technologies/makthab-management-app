@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import {
   loginRequestSchema,
   refreshRequestSchema,
+  logoutRequestSchema,
   signupRequestSchema,
   verifyOtpRequestSchema,
   resendOtpRequestSchema,
@@ -10,6 +11,7 @@ import {
   resetPasswordRequestSchema,
   type SignupRequest,
   type ForgotPasswordRequest,
+  type LogoutRequest,
 } from "@makthab/shared";
 import {
   userRepository,
@@ -18,7 +20,7 @@ import {
   adminNotificationRepository,
   isUniqueConstraintError,
 } from "../db";
-import { signAccessToken, signRefreshToken, verifyRefreshToken } from "../lib/jwt";
+import { signAccessToken, verifyAccessToken } from "../lib/jwt";
 import { resolveRoleAccess } from "../lib/permissions";
 import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody } from "../middleware/validate";
@@ -32,7 +34,18 @@ import {
 } from "../lib/auth/otp";
 import { issuePasswordResetToken, consumePasswordResetToken } from "../lib/auth/passwordReset";
 import { notifyAdminsByEmail } from "../lib/auth/notifier";
-import { authRateLimiter, otpRateLimiter } from "../lib/auth/rateLimit";
+import {
+  authRateLimiter,
+  loginRateLimiter,
+  refreshRateLimiter,
+  otpRateLimiter,
+} from "../lib/auth/rateLimit";
+import {
+  issueRefreshToken,
+  rotateRefreshToken,
+  revokeRefreshToken,
+  revokeAllSessionsForUser,
+} from "../lib/auth/refreshSession";
 import { clientMeta, recordAudit } from "../lib/audit/auditLog";
 
 export const authRouter = Router();
@@ -259,6 +272,8 @@ authRouter.post(
     }
     const passwordHash = await bcrypt.hash(password, 12);
     await userRepository.setPassword(consumed.userId, passwordHash);
+    // Password change invalidates every outstanding refresh session.
+    await revokeAllSessionsForUser(consumed.userId);
     res.json({ data: { ok: true, message: "Password updated. You can sign in now." } });
   })
 );
@@ -266,7 +281,7 @@ authRouter.post(
 // POST /auth/login — verify credentials, issue access + refresh tokens.
 authRouter.post(
   "/login",
-  authRateLimiter,
+  loginRateLimiter,
   validateBody(loginRequestSchema),
   asyncHandler(async (req, res) => {
     const { username, password } = req.body as { username: string; password: string };
@@ -337,9 +352,13 @@ authRouter.post(
       permissionMatrix,
       permissionsVersion,
     });
-    const refreshToken = signRefreshToken(user.id);
-
     const meta = clientMeta(req);
+    const refreshToken = await issueRefreshToken({
+      userId: user.id,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+    });
+
     await recordAudit({
       userId: user.id,
       action: "login",
@@ -367,20 +386,33 @@ authRouter.post(
 );
 
 // POST /auth/refresh — exchange a valid refresh token for a fresh access token.
+// Rotates the refresh token (old jti revoked) so stolen tokens have a short window.
 authRouter.post(
   "/refresh",
-  authRateLimiter,
+  refreshRateLimiter,
   validateBody(refreshRequestSchema),
   asyncHandler(async (req, res) => {
     const { refreshToken } = req.body as { refreshToken: string };
-    let payload;
+    const meta = clientMeta(req);
+    let rotated;
     try {
-      payload = verifyRefreshToken(refreshToken);
-    } catch {
-      throw new AppError(401, "invalid_token", "Invalid or expired refresh token");
+      rotated = await rotateRefreshToken(refreshToken, {
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+      });
+    } catch (err) {
+      await recordAudit({
+        action: "refresh",
+        entity: "auth",
+        outcome: "failure",
+        additionalDetails: { reason: "invalid_or_revoked" },
+        ...meta,
+      });
+      throw err;
     }
-    const user = await userRepository.findByIdWithStaff(payload.sub);
+    const user = await userRepository.findByIdWithStaff(rotated.payload.sub);
     if (!user || user.status !== "active") {
+      await revokeAllSessionsForUser(rotated.payload.sub);
       throw new AppError(401, "unauthorized", "User no longer active");
     }
     const role = user.role;
@@ -393,10 +425,17 @@ authRouter.post(
       permissionMatrix,
       permissionsVersion,
     });
+    await recordAudit({
+      userId: user.id,
+      action: "refresh",
+      entity: "auth",
+      outcome: "success",
+      ...meta,
+    });
     res.json({
       data: {
         accessToken,
-        refreshToken: signRefreshToken(user.id),
+        refreshToken: rotated.refreshToken,
         user: {
           id: user.id,
           fullName: user.staff.fullName,
@@ -410,7 +449,44 @@ authRouter.post(
   })
 );
 
-// POST /auth/logout — stateless JWT: client discards tokens. Kept for symmetry.
-authRouter.post("/logout", (_req, res) => {
-  res.json({ data: { ok: true } });
-});
+// POST /auth/logout — revoke the presented refresh token (and optionally all devices).
+authRouter.post(
+  "/logout",
+  validateBody(logoutRequestSchema),
+  asyncHandler(async (req, res) => {
+    const dto = req.body as LogoutRequest;
+    const meta = clientMeta(req);
+    let userId: number | null = null;
+
+    if (dto.refreshToken) {
+      const revoked = await revokeRefreshToken(dto.refreshToken);
+      if (revoked) userId = revoked.userId;
+    }
+
+    if (dto.allDevices) {
+      const header = req.headers.authorization;
+      if (header?.startsWith("Bearer ")) {
+        try {
+          const access = verifyAccessToken(header.slice("Bearer ".length).trim());
+          userId = access.sub;
+          await revokeAllSessionsForUser(access.sub);
+        } catch {
+          // Invalid access token — still succeed (anti-enumeration / idempotent logout).
+        }
+      } else if (userId != null) {
+        await revokeAllSessionsForUser(userId);
+      }
+    }
+
+    await recordAudit({
+      userId,
+      action: "logout",
+      entity: "auth",
+      outcome: "success",
+      additionalDetails: { allDevices: !!dto.allDevices },
+      ...meta,
+    });
+
+    res.json({ data: { ok: true } });
+  })
+);

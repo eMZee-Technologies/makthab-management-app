@@ -23,4 +23,5 @@ export type {
   UserApprovalAudit,
   AdminNotification,
   AuditLog,
+  RefreshSession,
 } from "../../prisma/generated/postgres-client";

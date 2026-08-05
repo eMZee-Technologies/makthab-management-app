@@ -167,11 +167,32 @@ model User {
   staff              Staff                @relation(fields: [staffId], references: [id])
   otpChallenges      OtpChallenge[]
   passwordResets     PasswordResetToken[]
+  refreshSessions    RefreshSession[]
   approvalSubjectOf  UserApprovalAudit[]  @relation("ApprovalSubject")
   approvalActorOf    UserApprovalAudit[]  @relation("ApprovalActor")
   notifications      AdminNotification[]
   rolePermissionAudits RolePermissionAudit[]
   auditLogs          AuditLog[]
+}
+
+// Server-side refresh-token session (Phase 3 security). Each issued refresh
+// JWT carries `jti` matching RefreshSession.id. Revoked or missing rows make
+// /auth/refresh fail even if the JWT signature/expiry are still valid —
+// enabling logout, password-reset, and admin force-logout.
+model RefreshSession {
+  id        String    @id // jti (cuid)
+  userId    Int
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  userAgent String?
+  ipAddress String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([userId, revokedAt])
 }
 
 // One-time passcode challenge for signup verification and password reset.

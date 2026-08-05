@@ -1,4 +1,5 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import multer, { MulterError } from "multer";
 import type { NextFunction, Request, Response } from "express";
 import { studentRepository, staffRepository, orgProfileRepository } from "../db";
@@ -22,6 +23,54 @@ const SIGNATURE_TYPES = new Map<string, string>([["image/jpeg", ".jpg"]]);
 // Memory storage so the same buffer can be written to local disk or S3.
 const memory = multer.memoryStorage();
 
+/**
+ * Magic-byte sniff for JPEG / PNG / WebP (security redesign §3.2).
+ * Do not trust client Content-Type or filename alone.
+ */
+export function detectImageMime(buf: Buffer): "image/jpeg" | "image/png" | "image/webp" | null {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  // RIFF....WEBP
+  if (
+    buf.length >= 12 &&
+    buf.toString("ascii", 0, 4) === "RIFF" &&
+    buf.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
+/** Assert buffer matches an allowed image type; optionally restrict further. */
+export function assertAllowedImageBuffer(
+  buf: Buffer,
+  allowed: Map<string, string> = ALLOWED_TYPES
+): { mime: string; ext: string } {
+  const mime = detectImageMime(buf);
+  if (!mime || !allowed.has(mime)) {
+    const label =
+      allowed === SIGNATURE_TYPES
+        ? "Signature must be a JPEG image"
+        : "Only JPEG, PNG, or WebP images are allowed";
+    throw new AppError(400, "invalid_file", label);
+  }
+  return { mime, ext: allowed.get(mime)! };
+}
+
 function imageFileFilter(_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) {
   if (!ALLOWED_TYPES.has(file.mimetype)) {
     return cb(new AppError(400, "invalid_file", "Only JPEG, PNG, or WebP images are allowed"));
@@ -31,7 +80,8 @@ function imageFileFilter(_req: Request, file: Express.Multer.File, cb: multer.Fi
 
 function wrapMulter(
   middleware: ReturnType<ReturnType<typeof multer>["single"]>,
-  tooLargeMessage: string
+  tooLargeMessage: string,
+  allowed: Map<string, string> = ALLOWED_TYPES
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     middleware(req, res, (err: unknown) => {
@@ -42,6 +92,18 @@ function wrapMulter(
         return next(new AppError(400, "upload_error", err.message));
       }
       if (err) return next(err);
+      // Magic-byte check after multer buffers the file.
+      const file = req.file;
+      if (file?.buffer) {
+        try {
+          const { mime, ext } = assertAllowedImageBuffer(file.buffer, allowed);
+          file.mimetype = mime;
+          // Keep originalname extension aligned with sniffed type for key builders.
+          file.originalname = `upload${ext}`;
+        } catch (e) {
+          return next(e);
+        }
+      }
       next();
     });
   };
@@ -51,25 +113,30 @@ function extFor(file: Express.Multer.File, allowed: Map<string, string>): string
   return allowed.get(file.mimetype) ?? (path.extname(file.originalname) || ".bin");
 }
 
+/** Build a randomized relative storage key (no user-controlled filename). */
+function randomPhotoKey(prefix: string, file: Express.Multer.File, allowed: Map<string, string>): string {
+  return `photos/${prefix}-${randomUUID()}${extFor(file, allowed)}`;
+}
+
 /** Build the relative storage key for a student photo upload. */
 export function studentPhotoKey(admissionNo: string, file: Express.Multer.File): string {
-  const safeAdmission = admissionNo.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `photos/${safeAdmission}-${Date.now()}${extFor(file, ALLOWED_TYPES)}`;
+  const safeAdmission = admissionNo.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 32);
+  return randomPhotoKey(`stu-${safeAdmission}`, file, ALLOWED_TYPES);
 }
 
 /** Build the relative storage key for a staff photo upload. */
 export function staffPhotoKey(staffId: number, file: Express.Multer.File): string {
-  return `photos/staff-${staffId}-${Date.now()}${extFor(file, ALLOWED_TYPES)}`;
+  return randomPhotoKey(`staff-${staffId}`, file, ALLOWED_TYPES);
 }
 
 /** Build the relative storage key for a staff signature (JPEG only). */
 export function staffSignatureKey(staffId: number, file: Express.Multer.File): string {
-  return `photos/staff-${staffId}-signature-${Date.now()}${extFor(file, SIGNATURE_TYPES)}`;
+  return randomPhotoKey(`staff-${staffId}-sig`, file, SIGNATURE_TYPES);
 }
 
 /** Build the relative storage key for an org-profile header image. */
 export function orgImageKey(orgId: number, file: Express.Multer.File): string {
-  return `photos/org-${orgId}-${Date.now()}${extFor(file, ALLOWED_TYPES)}`;
+  return randomPhotoKey(`org-${orgId}`, file, ALLOWED_TYPES);
 }
 
 /** Persist an uploaded multer buffer and return the storage key. */
@@ -80,6 +147,11 @@ export async function saveUploadedFile(
   if (!file.buffer) {
     throw new AppError(500, "upload_error", "Upload buffer missing");
   }
+  // Re-check magic bytes at persist time (defense in depth).
+  assertAllowedImageBuffer(
+    file.buffer,
+    file.fieldname === "signature" ? SIGNATURE_TYPES : ALLOWED_TYPES
+  );
   try {
     await getStorage().save(key, file.buffer, { contentType: file.mimetype });
     return key;
@@ -122,7 +194,7 @@ export function uploadStudentPhoto(req: Request, res: Response, next: NextFuncti
 }
 
 // Staff photos mirror student photos, but Staff has no admissionNo, so the
-// filename is keyed off the staff id (staff-${id}-${ts}).
+// filename is keyed off the staff id (staff-${id}-${uuid}).
 const staffUpload = multer({
   storage: memory,
   limits: { fileSize: MAX_BYTES },
@@ -172,13 +244,17 @@ export function uploadStaffSignature(req: Request, res: Response, next: NextFunc
       return next(new AppError(404, "not_found", "Staff not found"));
     }
     (req as Request & { uploadStaff?: typeof staff }).uploadStaff = staff;
-    wrapMulter(signatureUpload.single("signature"), "Signature must be 3MB or smaller")(req, res, next);
+    wrapMulter(
+      signatureUpload.single("signature"),
+      "Signature must be 3MB or smaller",
+      SIGNATURE_TYPES
+    )(req, res, next);
   })().catch(next);
 }
 
 // Org-profile header image (web app-header background only — NOT embedded in the
 // ASCII PDF writer), so it follows the same JPEG/PNG/WebP rules as photos, keyed
-// off the org profile id (org-${id}-${ts}).
+// off the org profile id (org-${id}-${uuid}).
 const orgImageUpload = multer({
   storage: memory,
   limits: { fileSize: MAX_BYTES },

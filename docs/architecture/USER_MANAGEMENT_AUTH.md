@@ -41,13 +41,14 @@ Forgot password: `forgot-password` → OTP → `resetToken` → `reset-password`
 | POST | `/auth/resend-otp` | public + rate limit | 60s cooldown |
 | POST | `/auth/forgot-password` | public + rate limit | Always 200; anti-enumeration |
 | POST | `/auth/reset-password` | public + rate limit | Consumes `resetToken` |
-| POST | `/auth/login` | public + rate limit | Lockout after `LOGIN_MAX_FAILURES`; inactive statuses → 401 |
-| POST | `/auth/refresh` | public + rate limit | Unchanged semantics |
-| POST | `/auth/logout` | public | Client discards tokens |
+| POST | `/auth/login` | public + rate limit | Lockout after `LOGIN_MAX_FAILURES`; inactive statuses → 401; issues refresh session (`RefreshSession`) |
+| POST | `/auth/refresh` | public + rate limit | Verifies jti against `RefreshSession`; rotates refresh token |
+| POST | `/auth/logout` | public | Body `{ refreshToken?, allDevices? }` — revokes session(s) |
 | GET | `/users?status=pending_approval` | `users.manage` | Approval queue |
 | POST | `/users/:id/approve` | `users.manage` | Audit row `approved` |
 | POST | `/users/:id/reject` | `users.manage` | Audit row `rejected` |
 | GET | `/users/:id/approval-audit` | `users.manage` | Audit history |
+| POST | `/users/:id/revoke-sessions` | `users.update` | Force-logout — revoke all refresh sessions |
 | GET | `/users/notifications` | `users.manage` | In-app admin alerts |
 | POST | `/users/notifications/:id/read` | `users.manage` | Mark read |
 

@@ -1,9 +1,11 @@
 # Makthab — AWS infrastructure (Terraform)
 
 Implements Phase 2 of
-[`docs/architecture/redesign/02-cloud-deployment-aws.md`](../../docs/architecture/redesign/02-cloud-deployment-aws.md):
-VPC, RDS PostgreSQL, ECS Fargate + ALB, S3 (files + client), CloudFront, Secrets
-Manager, ECR, CloudWatch alarms, and an AWS Budgets alert.
+[`docs/architecture/redesign/02-cloud-deployment-aws.md`](../../docs/architecture/redesign/02-cloud-deployment-aws.md)
+and Phase 3 infra controls from
+[`docs/architecture/redesign/03-security.md`](../../docs/architecture/redesign/03-security.md):
+VPC, RDS PostgreSQL (CMK-encrypted), ECS Fargate + ALB + WAF, S3 (SSE-KMS), CloudFront,
+Secrets Manager, ECR, CloudWatch alarms (incl. login-failure / backup), and an AWS Budgets alert.
 
 ## Layout
 
@@ -11,13 +13,15 @@ Manager, ECR, CloudWatch alarms, and an AWS Budgets alert.
 infra/terraform/
   modules/
     networking/   # VPC, subnets, SGs, VPC endpoints (S3/ECR/Secrets/Logs)
+    kms/          # Customer-managed CMK for RDS + S3 (Phase 3)
     database/     # RDS PostgreSQL 16 Single-AZ
     ecr/          # API image repository
-    storage/      # files + client S3 buckets
-    secrets/      # DATABASE_URL, JWT secrets
+    storage/      # files + client S3 buckets (SSE-KMS when CMK provided)
+    secrets/      # DATABASE_URL, JWT secrets, BACKUP_INTERNAL_TOKEN
     ecs/          # Fargate service + ALB + IAM
+    waf/          # WAFv2 managed rule groups on the ALB (Phase 3)
     cdn/          # CloudFront for SPA
-    monitoring/   # Alarms + SNS (+ optional Budgets)
+    monitoring/   # Alarms + SNS (+ login/backup metric filters)
   envs/
     staging/      # Wire-up for the staging environment
 ```
@@ -33,11 +37,13 @@ infra/terraform/
 ```bash
 cd infra/terraform/envs/staging
 cp terraform.tfvars.example terraform.tfvars
-# Edit tfvars: set db_password, jwt_secret, jwt_refresh_secret, alarm_email
+# Edit tfvars: set db_password, jwt_secret, jwt_refresh_secret,
+# backup_internal_token, alarm_email
 
 export TF_VAR_db_password='…'
 export TF_VAR_jwt_secret='…'
 export TF_VAR_jwt_refresh_secret='…'
+export TF_VAR_backup_internal_token='…'
 
 terraform init
 terraform plan
@@ -70,10 +76,11 @@ aws ecs update-service \
 
 Default config avoids a NAT Gateway (`use_nat_gateway = false`) and uses VPC
 endpoints instead — the largest monthly saving called out in the redesign doc.
-RDS is Single-AZ `db.t4g.micro`. Expected ballpark: **~$50–65/mo** for staging
-shaped like production.
+RDS is Single-AZ `db.t4g.micro`. Expected ballpark: **~$55–75/mo** for staging
+shaped like production (adds ~$5–10 for WAF + ~$1 for KMS vs Phase 2 baseline).
 
 ## Related docs
 
 - [AWS runbook](../../docs/deployment/AWS_RUNBOOK.md) — backup/restore + smoke checklist
 - Application storage adapter: `server/src/lib/storage` (`STORAGE_BACKEND=local|s3`, `S3_BUCKET`)
+- Security redesign: [`docs/architecture/redesign/03-security.md`](../../docs/architecture/redesign/03-security.md)

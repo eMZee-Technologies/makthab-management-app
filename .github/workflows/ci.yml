@@ -31,6 +31,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Dependency audit (Critical/High)
+        # Fails the build on Critical/High advisories (security redesign §6).
+        run: npm audit --audit-level=high
+
       - name: Server integration tests (SQLite)
         working-directory: server
         env:
@@ -42,6 +46,24 @@ jobs:
           npx prisma migrate deploy --schema=./prisma/sqlite/schema.prisma
           npx tsx prisma/seed.ts
           npx jest --runInBand
+
+  sast:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: semgrep/semgrep:1.90.0
+    steps:
+      - uses: actions/checkout@v4
+      # High-signal TypeScript/Node rules only — keep noise low for a small team.
+      - name: Semgrep scan
+        run: |
+          semgrep scan \
+            --config p/typescript \
+            --config p/nodejs \
+            --error \
+            --metrics=off \
+            --quiet \
+            server/src packages/shared/src
 
   terraform-fmt:
     runs-on: ubuntu-latest

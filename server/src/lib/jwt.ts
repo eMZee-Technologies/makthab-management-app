@@ -21,6 +21,8 @@ export interface AccessTokenPayload {
 export interface RefreshTokenPayload {
   sub: number; // User.id
   tokenType: "refresh";
+  /** Matches RefreshSession.id — required for revocation checks. */
+  jti: string;
 }
 
 export function signAccessToken(payload: AccessTokenPayload): string {
@@ -29,10 +31,14 @@ export function signAccessToken(payload: AccessTokenPayload): string {
   } as SignOptions);
 }
 
-export function signRefreshToken(userId: number): string {
-  return jwt.sign({ sub: userId, tokenType: "refresh" } as RefreshTokenPayload, env.jwtRefreshSecret, {
-    expiresIn: env.jwtRefreshTtl,
-  } as SignOptions);
+export function signRefreshToken(userId: number, jti: string): string {
+  return jwt.sign(
+    { sub: userId, tokenType: "refresh", jti } as RefreshTokenPayload,
+    env.jwtRefreshSecret,
+    {
+      expiresIn: env.jwtRefreshTtl,
+    } as SignOptions
+  );
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
@@ -40,5 +46,13 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
 }
 
 export function verifyRefreshToken(token: string): RefreshTokenPayload {
-  return jwt.verify(token, env.jwtRefreshSecret) as unknown as RefreshTokenPayload;
+  const payload = jwt.verify(token, env.jwtRefreshSecret) as unknown as RefreshTokenPayload;
+  if (payload.tokenType !== "refresh" || typeof payload.sub !== "number") {
+    throw new Error("invalid_refresh_payload");
+  }
+  // Pre-revocation-era tokens lack jti — treat as invalid so clients re-login.
+  if (!payload.jti || typeof payload.jti !== "string") {
+    throw new Error("missing_jti");
+  }
+  return payload;
 }

@@ -6,6 +6,7 @@ export const AUDIT_ACTIONS = [
   "login",
   "logout",
   "refresh",
+  "revoke",
   "create",
   "read",
   "update",

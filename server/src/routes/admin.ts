@@ -4,13 +4,39 @@ import { Router } from "express";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAuth, requireResourceAny } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
-import { env } from "../lib/env";
+import { env, isProd } from "../lib/env";
 import { DATA_DIR, BACKUPS_DIR, ensureDir } from "../lib/paths";
 import { recordAuditFromRequest } from "../lib/audit/auditLog";
+import type { NextFunction, Request, Response } from "express";
 
 // Admin-only maintenance endpoints (doc §13.3).
 export const adminRouter = Router();
 adminRouter.use(requireAuth, requireResourceAny("admin", ["view", "create"]));
+
+/**
+ * Second factor for backup (security redesign §3.2): in addition to Admin
+ * permission, production requires `BACKUP_INTERNAL_TOKEN` and a matching
+ * `X-Makthab-Backup-Token` header so the route is not callable like normal
+ * CRUD from a stolen Admin session alone. Local/dev/test may omit the token.
+ */
+export function requireBackupInternalAccess(req: Request, _res: Response, next: NextFunction) {
+  const expected = env.backupInternalToken;
+  if (!expected) {
+    if (isProd) {
+      throw new AppError(
+        503,
+        "backup_disabled",
+        "Backup route requires BACKUP_INTERNAL_TOKEN in production"
+      );
+    }
+    return next();
+  }
+  const provided = req.headers["x-makthab-backup-token"];
+  if (typeof provided !== "string" || provided !== expected) {
+    throw new AppError(403, "forbidden", "Backup requires valid internal token");
+  }
+  next();
+}
 
 /**
  * Resolve the on-disk SQLite file from DATABASE_URL. Prisma resolves
@@ -30,6 +56,7 @@ function resolveSqliteDatabaseFile(): string | null {
 // PostgreSQL deployments should use managed DB snapshots instead.
 adminRouter.post(
   "/backup",
+  requireBackupInternalAccess,
   asyncHandler(async (req, res) => {
     if (env.databaseProvider !== "sqlite") {
       throw new AppError(

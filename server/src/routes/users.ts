@@ -25,6 +25,8 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { validateBody, validateQuery } from "../middleware/validate";
 import { requireAuth, requireResourceAny, requireResourcePermission } from "../middleware/auth";
 import { AppError } from "../middleware/errorHandler";
+import { revokeAllSessionsForUser } from "../lib/auth/refreshSession";
+import { clientMeta, recordAudit } from "../lib/audit/auditLog";
 
 // ---- Users (Admin only) ----------------------------------------------------
 // Account/access management: stricter than /staff (no Accountant). A "user" is a
@@ -272,7 +274,31 @@ usersRouter.delete(
       throw new AppError(400, "self_action_forbidden", "You cannot deactivate your own account");
     }
     await userRepository.softDelete(id);
+    await revokeAllSessionsForUser(id);
     res.json({ data: { id, status: "inactive" } });
+  })
+);
+
+// POST /users/:id/revoke-sessions — force-logout (Admin / users.update).
+usersRouter.post(
+  "/:id/revoke-sessions",
+  requireResourcePermission("users", "update"),
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    const existing = await userRepository.findById(id);
+    if (!existing) throw new AppError(404, "not_found", "User not found");
+    const count = await revokeAllSessionsForUser(id);
+    const meta = clientMeta(req);
+    await recordAudit({
+      userId: req.user!.sub,
+      action: "revoke",
+      entity: "user",
+      resourceId: String(id),
+      outcome: "success",
+      additionalDetails: { revokedSessions: count, subjectUsername: existing.username },
+      ...meta,
+    });
+    res.json({ data: { id, revokedSessions: count } });
   })
 );
 
@@ -288,6 +314,7 @@ usersRouter.post(
     const dto = req.body as typeof userPasswordResetSchema._output;
     const passwordHash = await bcrypt.hash(dto.password, 12);
     await userRepository.setPassword(id, passwordHash);
+    await revokeAllSessionsForUser(id);
     res.json({ data: { id } });
   })
 );
