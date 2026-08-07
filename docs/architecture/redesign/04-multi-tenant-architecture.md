@@ -1,10 +1,14 @@
 # Phase 4 — Multi-Tenant Architecture
 
+**Status:** Design rationale (see executable plan:
+[04-multi-tenant-migration-plan.md](./04-multi-tenant-migration-plan.md)).
 **Builds on:** [01-multi-database-support.md](./01-multi-database-support.md) (Postgres),
 [02-cloud-deployment-aws.md](./02-cloud-deployment-aws.md) (ECS Fargate + RDS + S3),
 [03-security.md](./03-security.md) (IAM/KMS/Secrets Manager baseline).
 **See also:** [00-overview-and-prioritization.md](./00-overview-and-prioritization.md) for the
 overall attack order and phase framework this document follows.
+**Execute via:** [04-multi-tenant-migration-plan.md](./04-multi-tenant-migration-plan.md)
+(Phases 0–6, Super Admin governance, zero-downtime expand→contract, MVP/metrics).
 
 ---
 

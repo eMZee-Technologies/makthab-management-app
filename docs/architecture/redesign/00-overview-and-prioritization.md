@@ -228,6 +228,7 @@ modernize the existing single-tenant product. But confirm before Phase 4:
 | [02-cloud-deployment-aws.md](./02-cloud-deployment-aws.md) | AWS reference architecture, IaC, CI/CD, DR | Brief §5 |
 | [03-security.md](./03-security.md) | Threat model, OWASP mapping, IAM/KMS/Secrets Manager, IR | Brief §3 |
 | [04-multi-tenant-architecture.md](./04-multi-tenant-architecture.md) | Tenancy model, isolation, provisioning, autoscaling | Brief §2 |
+| [04-multi-tenant-migration-plan.md](./04-multi-tenant-migration-plan.md) | Executable Phases 0–6, Super Admin governance, zero-downtime migration | Brief §2 (execution) |
 | [05-ui-redesign.md](./05-ui-redesign.md) | Design system, accessibility, i18n, theming | Brief §4 |
 | This document | Prioritization / attack order | Brief §6 |
 
