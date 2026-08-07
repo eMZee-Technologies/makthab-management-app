@@ -154,7 +154,7 @@ alongside all of them and converges with Phase 4 only for theming.
 | 1. Multi-DB | 4-6 wks | 1-2 backend | App runs identically against SQLite (dev/test) and Postgres (staging) via one Prisma schema + config flag; DAO interface documented; CI runs the test suite against both. | Every later phase (cloud, tenancy) has no viable database target. |
 | 2. AWS Cloud | 4-6 wks (overlaps Ph.1 tail) | 1 backend + DevOps | App deployed end-to-end on AWS via IaC (Terraform/CDK); CI/CD pipeline green; backups + basic DR runbook exist; **real reference dataset from `docs/source-data/Maktab Detailed - Report.xlsx` loaded and reconciled, not just seed data**. | No repeatable deployment; every future phase is validated by hand. Skipping the data reconciliation step specifically means going live on incomplete records for the one real Masjid this app serves today. |
 | 3. Security | 4-8 wks (overlaps Ph.2/4) | 1 backend + security review | OWASP Top 10 control matrix complete and verified; secrets out of source/env files and in Secrets Manager; logging/alerting live; incident-response playbook exists. | Multi-tenancy launches on an unaudited base; regulatory/reputational risk given the app holds financial + minor (student) data. |
-| 4. Multi-tenant | 8-12 wks | 2 backend + 1 frontend | New tenant can self-provision (or be provisioned) with full data isolation verified by automated tests; per-tenant rate limits and autoscaling policy in place. | N/A unless business confirms SaaS direction — see §0/§6. |
+| 4. Multi-tenant | 8-12 wks | 2 backend + 1 frontend | Phases 0–6 in [04](./04-multi-tenant-architecture.md): shared-schema + RLS tenancy, Super Admin governance (provisioning/quotas/flags), zero-downtime Tenant #1 migration, second-tenant isolation proof, per-tenant rate limits + autoscaling. | N/A unless business confirms SaaS direction — see §0/§6. |
 | 5. UI redesign | 6-10 wks, parallel | 1-2 frontend/design | New design system shipped; WCAG 2.1 AA audit passes; i18n framework covers Arabic RTL + at least one more locale; component catalog documented. | Product stays functional but hard to market to new (non-technical) customers — directly undercuts the multi-tenant SaaS goal. |
 
 Estimates assume the team is already familiar with this codebase (per
@@ -227,7 +227,7 @@ modernize the existing single-tenant product. But confirm before Phase 4:
 | [01-multi-database-support.md](./01-multi-database-support.md) | Multi-database abstraction, DAO interfaces, migrations | Brief §1 |
 | [02-cloud-deployment-aws.md](./02-cloud-deployment-aws.md) | AWS reference architecture, IaC, CI/CD, DR | Brief §5 |
 | [03-security.md](./03-security.md) | Threat model, OWASP mapping, IAM/KMS/Secrets Manager, IR | Brief §3 |
-| [04-multi-tenant-architecture.md](./04-multi-tenant-architecture.md) | Tenancy model, isolation, provisioning, autoscaling | Brief §2 |
+| [04-multi-tenant-architecture.md](./04-multi-tenant-architecture.md) | Tenancy model (A/B/C), Super Admin governance, Phase 0–6 zero-downtime migration, isolation, provisioning, autoscaling | Brief §2 |
 | [05-ui-redesign.md](./05-ui-redesign.md) | Design system, accessibility, i18n, theming | Brief §4 |
 | This document | Prioritization / attack order | Brief §6 |
 

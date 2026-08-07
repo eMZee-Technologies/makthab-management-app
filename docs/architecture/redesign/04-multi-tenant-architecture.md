@@ -1,438 +1,629 @@
-# Phase 4 — Multi-Tenant Architecture
+# Phase 4 — Multi-Tenant Architecture & Migration Plan
 
+**Status:** Architecture decision + executable migration plan (proposal).
 **Builds on:** [01-multi-database-support.md](./01-multi-database-support.md) (Postgres),
 [02-cloud-deployment-aws.md](./02-cloud-deployment-aws.md) (ECS Fargate + RDS + S3),
 [03-security.md](./03-security.md) (IAM/KMS/Secrets Manager baseline).
 **See also:** [00-overview-and-prioritization.md](./00-overview-and-prioritization.md) for the
 overall attack order and phase framework this document follows.
+**Baseline contract:** [BUILD_CONTRACT.md](../BUILD_CONTRACT.md) (single-tenant today).
 
 ---
 
-## 1. Executive summary
+## 1. Executive summary — recommended approach
 
-This is the highest-risk, most speculative phase in the whole plan, and it
-should be read that way. The overview doc's §0 already flags that the entire
-brief is a pivot from "software for one Madrasa" to "SaaS sold to many
-Masajid" — nowhere is that more true than here. Everything in this document
-is buildable, but **do not start it until §6.1 of the overview
-(confirmed multi-Masjid demand) is actually true.** If it isn't, Phases 1-3
-plus the UI track already ship a materially better single-tenant product;
-building tenancy on spec ahead of a second customer is the single biggest
-line item in the global risk register (overview §8, "Multi-tenancy is built
-but never sold").
+Convert Makthab from a hard-coded single organization into a **shared-schema,
+row-isolated multi-tenant SaaS** hosted on one application deployment and one
+Postgres cluster, with **Postgres Row-Level Security (RLS)** as a second
+enforcement layer and a **platform Super Admin** control plane for tenant
+lifecycle, quotas, and feature toggles.
 
-With that caveat stated once: if the business case is confirmed, this phase
-converts Makthab from a hard-coded single organization into a system that
-can host N independent Masajid, each with isolated data, independent
-branding, independent staff/roles, and independent billing, while sharing
-one application deployment and one database cluster for operational
-efficiency.
+| Decision | Choice |
+|---|---|
+| Tenancy model | **Shared DB + shared schema + `tenantId` column** (Option A) |
+| Isolation | Application Prisma Client Extension **and** Postgres RLS |
+| Escape hatch | Dedicated DB/RDS per outlier tenant later (same `tenantId` code path) |
+| Tenant resolution | Subdomain `{slug}.makthab.app` → cached `Tenant` lookup |
+| Control plane | New **Super Admin** (platform) role, separate from tenant Admin |
+| Migration style | Additive, phased, **zero-downtime** cutover for the current Masjid |
+| Do-not-start gate | Confirmed multi-Masjid demand (overview §6.1) before Phase 1 of *this* plan |
 
-**Correction to the overview doc's baseline note:** the overview
-characterizes the current `OrgProfile` model as "multi-row branding." Having
-read `server/prisma/schema.prisma` directly, that's not quite right — it's a
-**single-row-by-convention** table (`id: 1`), and its own schema comment
-already names the seam: *"the seam for future multi-tenancy — add a
-`tenantId` FK here... and scope the lookup by `req.tenantId` instead of 'the
-one row'."* That comment is effectively a note-to-self from the team that
-built it, and this document is the design that fulfills it. Similarly, the
-`Role` model (commit `1551`) is DB-backed with JSON permission sets and
-`isSystem` seed rows (Admin/Accountant/Teacher) — a good foundation, but
-`Role.name` is currently globally unique, which needs to change for tenancy
-(§3.3).
+**Why this recommendation (cost / scale / extensibility):**
+
+- **Cost:** One RDS instance + one ECS service for tens-to-low-hundreds of
+  Masajid; no per-tenant schema runners or N connection pools.
+- **Scalability:** Leading `tenantId` indexes + per-tenant rate limits +
+  existing ECS autoscaling handle expected load; hybrid Model C escape hatch
+  covers noisy-neighbor or data-residency outliers without rewriting app code.
+- **Extensibility:** Quotas, feature flags, billing fields, and white-label
+  branding attach to the `Tenant` / `OrgProfile` rows without topology changes.
+- **Safety:** Current single tenant is backfilled as Tenant #1 and keeps
+  working through every phase; isolation is proven before a second paying
+  tenant is onboarded.
+
+> **Caveat (unchanged from prior revision):** do not start this work until
+> multi-Masjid demand is confirmed. Phases 1–3 of the redesign overview plus
+> the UI track already ship a better single-tenant product; speculative
+> tenancy is the largest item in the global risk register.
 
 ---
 
-## 2. Tenancy model decision matrix
+## 2. Current-state baseline (what we are migrating from)
 
-Three standard models, scored against this app's actual shape: ~9-10
-Prisma models, financial + minor (student) data, an existing single-tenant
-schema to migrate from, and a plausible customer count in the tens-to-low-
-hundreds of Masajid (not thousands) even at optimistic growth.
+Understood from the live codebase and companion docs — not assumptions.
 
-| Model | Isolation strength | Migration cost from current schema | Operational complexity | Per-tenant infra cost | Blast radius of a bug |
-|---|---|---|---|---|---|
-| **A. Shared DB, shared schema** (`tenantId` column on every table) | Medium — enforced entirely by query correctness unless paired with RLS | **Low** — add a column, backfill, index. No schema-per-tenant tooling needed. | **Low** — one schema to migrate, one connection pool, standard Prisma workflow | **Lowest** — tenants share compute and DB instance | High if unmitigated (one bad `WHERE` clause = cross-tenant leak); mitigated to Low with RLS (see §3.2) |
-| **B. Shared DB, separate schema per tenant** (Postgres `CREATE SCHEMA tenant_x`) | High — Postgres enforces schema boundaries natively | High — Prisma has no native "one schema per tenant, N tenants, dynamically" story; requires either N generated Prisma Client instances or raw SQL schema-switching, plus a migration runner that applies every migration to every tenant schema | High — provisioning = running the full migration set per new tenant; connection pooling gets awkward (pool per schema, or `search_path` juggling per request) | Medium — still one DB instance, but per-schema migration/backup tooling overhead scales with tenant count | Medium — a schema-switching bug can still leak across schemas if `search_path` is set wrong |
-| **C. Separate database per tenant** | Highest — full engine-level isolation, can even live on different RDS instances | Highest — no code change to the schema itself, but application needs a tenant→connection-string router, and "list all tenants" cross-cutting admin queries become fan-out queries across N databases | Highest — N databases to patch, back up, monitor, and pay for individually; migrations must be run N times | Highest — either N small RDS instances (expensive at idle) or N databases on shared instances (loses some isolation benefit anyway) | Lowest, but the operational surface (N things to get right) creates its own risk |
+| Area | Current state |
+|---|---|
+| **Stack** | `client/` React 18+Vite; `server/` Express+Prisma 5; `@makthab/shared` Zod DTOs; npm workspaces |
+| **DB** | Canonical Postgres schema + generated SQLite schema for local/CI (`DATABASE_PROVIDER`); repository layer in `server/src/db/` |
+| **Tenancy** | None. `OrgProfile` is single-row-by-convention (`id: 1`); schema comment already names the multi-tenant seam |
+| **Auth / roles** | JWT Bearer + refresh sessions; DB-backed `Role` with permission matrix; system roles Admin / Accountant / Teacher (`Role.name` globally `@unique`) |
+| **User flows** | Login → students/fees/attendance/expenses/staff/salaries/reports/dashboard; signup+OTP+tenant-admin approval; audit logs; admin backup |
+| **Files** | Storage adapter: local `data/files/` or S3 (`STORAGE_BACKEND`); prefixes `photos/`, `receipts/`, `payslips/`, `reports/` — **not yet tenant-prefixed** |
+| **Deploy / CI** | GitHub Actions CI (typecheck, SQLite Jest, Semgrep, terraform fmt); staging deploy to ECR/ECS + S3/CloudFront (`deploy-staging.yml`); Terraform under `infra/terraform` |
+| **Data** | Real Masjid dataset via idempotent xlsx import (`docs/migration/MIGRATION.md`); financial + minor (student) data — isolation is safety-critical |
 
-### Recommendation: start with **Model A (shared schema) + Postgres Row-Level
-Security as a second, DB-enforced layer**, with a documented escape hatch to
-Model C for a single outlier tenant later.
+**Implications for migration:** every globally `@unique` field
+(`Student.admissionNo`, `User.username`, `Role.name`, `Class.name`, …) must
+become tenant-scoped; repositories (not raw route Prisma calls) are the
+right injection point for automatic `tenantId` filtering; CI must gain a
+Postgres+RLS isolation job before enforcement goes live.
+
+---
+
+## 3. Architectural options compared
+
+Three tenancy shapes were evaluated against Makthab’s actual shape (~20+
+Prisma models including auth/audit, financial + minor data, an existing
+single-tenant schema, and a plausible customer count in the **tens to low
+hundreds** of Masajid).
+
+| Criterion | **A. Shared schema + row isolation** (`tenantId` + RLS) | **B. Schema-per-tenant** (Postgres `CREATE SCHEMA`) | **C. Microservice / DB-per-tenant fabric** |
+|---|---|---|---|
+| **Isolation strength** | Medium app-only; **High with RLS** | High (schema boundaries) | Highest (process + DB boundary) |
+| **Migration cost from today** | **Lowest** — additive columns, backfill, indexes | High — Prisma has no native dynamic N-schema story; N clients or `search_path` juggling | Highest — tenant router, N DBs/services, fan-out admin queries |
+| **Ops complexity** | **Low** — one schema, one pool, standard Prisma migrations | High — migrate every tenant schema on every release | Highest — N deployables, N backups, service mesh / gateway |
+| **Per-tenant infra cost** | **Lowest** (shared compute + DB) | Medium (still one instance, but tooling scales with N) | Highest (idle cost of many small DBs/services) |
+| **Blast radius of a bug** | High if unmitigated; **Low with RLS + isolation CI** | Medium (`search_path` mistakes) | Low for data, but ops surface creates its own risk |
+| **Future extensibility** | Excellent for quotas/flags/billing on `Tenant` | Awkward for cross-tenant analytics / Super Admin views | Flexible per tenant, poor for platform-wide features |
+| **Fits expected N** | **Yes** (tens–hundreds) | Overkill for expected N | Justified only for regulated/enterprise outliers |
+
+### 3.1 Recommendation: Option A + RLS, with documented escape hatch
+
+**Start with Option A (shared schema + `tenantId`) plus Postgres RLS**, and
+document a **hybrid escape hatch** to a dedicated database (Option C shape)
+for a single outlier tenant later.
 
 Rationale:
-- Model A has by far the lowest migration cost from the current schema — it
-  is additive (`tenantId` columns + indexes), not a schema topology change.
-  Given this app's realistic tenant count (tens, not thousands), Model B's
-  extra operational complexity buys isolation the app doesn't clearly need,
-  while Model C's per-tenant cost doesn't make sense until a tenant is large
-  enough or sensitive enough to justify dedicated infrastructure (e.g. a
-  future enterprise customer with a data-residency requirement).
-- The one real weakness of Model A — "isolation is only as good as every
-  query's `WHERE tenantId = ?`" — is exactly what Postgres RLS is for: a
-  policy enforced by the database engine itself, so a missed filter in
-  application code fails closed instead of leaking data. This is standard
-  "defense in depth," not an either/or with careful application code — do
-  both (§3.2).
-- **Hybrid escape hatch:** because the `tenantId`-column design is identical
-  regardless of which physical database a row lives in, a specific tenant
-  can be migrated later to its own RDS instance (Model C) without changing
-  application code — only the connection-routing layer changes for that one
-  tenant. Document this now so it's a known lever, not a redesign, if a
-  future customer needs it (e.g. a large tenant hitting noisy-neighbor
-  limits, or a contractual isolation requirement).
+
+1. **Lowest migration cost** from the current Prisma schema — additive, not a
+   topology rewrite. Matches zero-downtime goals for the live Masjid.
+2. **Cost-efficient at expected scale** — shared ECS + RDS; no per-tenant
+   migration runners.
+3. **RLS closes the classic shared-schema failure mode** (“forgot `WHERE
+   tenantId`”) so a missed filter fails closed (zero rows), not open (leak).
+4. **Option B** buys isolation we do not clearly need while fighting Prisma’s
+   single-schema workflow and connection pooling.
+5. **Option C (microservice / DB-per-tenant)** optimizes for thousands of
+   tenants or hard regulatory isolation; it multiplies ops cost and delays MVP.
+   Because application queries are always `tenantId`-scoped, moving one tenant
+   to its own RDS later is a **connection-routing** change, not an app rewrite.
+
+### 3.2 Rejected / deferred alternatives (explicit)
+
+- Path-prefix tenancy (`/t/{slug}/...`) — more routing bugs; weaker
+  white-label story for religious institutions.
+- Header-only tenancy — easy to spoof; keep as internal Super Admin override
+  only, never as the primary customer path.
+- Big-bang microservice split of fees/attendance/etc. — orthogonal to tenancy
+  and out of scope; keep the modular monolith.
 
 ---
 
-## 3. Architecture & design decisions
+## 4. Target architecture
 
-### 3.1 Tenant identification: subdomain-per-tenant
-
-Use `{tenant-slug}.makthab.app` (e.g. `masjid-umar.makthab.app`), resolved
-at the edge (CloudFront/ALB → API middleware extracts the subdomain and
-resolves it to a `tenantId` via a small, heavily-cached `Tenant` lookup
-table).
-
-Trade-off considered and rejected: a path prefix (`makthab.app/masjid-umar/`)
-or a header-based scheme. Subdomain wins here because (a) it lets each
-tenant's white-labeled UI (Phase 5's theming) feel like *their* installation
-rather than a shared multi-tenant app with a URL-embedded slug, which
-matters for a product being sold to religious institutions who value having
-"their own" system, and (b) it keeps API route paths identical to today's
-(`/api/v1/students`, etc.) — no path-prefix stripping logic threaded through
-every route, which reduces the chance of a routing bug becoming a tenant
-isolation bug.
-
-### 3.2 Data isolation: `tenantId` column + Prisma Client Extension + Postgres RLS
-
-Two independent, stacked layers — neither alone is sufficient:
-
-**Layer 1 — application-enforced, via Prisma Client Extensions.** Prisma
-does not have first-class multi-tenancy middleware (the older
-`$use()` middleware API is deprecated in favor of Client Extensions as of
-Prisma 5, which is what this app already runs). Build a request-scoped
-Prisma Client Extension that:
-- Auto-injects `tenantId: ctx.tenantId` into every `where` clause on
-  tenant-scoped models, for `find*`, `update*`, `delete*`, `count`, `aggregate`.
-- Auto-injects `tenantId: ctx.tenantId` into every `create`/`createMany`
-  payload.
-- Throws (fails closed) if a query somehow reaches the DB layer without a
-  resolved `tenantId` in request context.
-
-This is safer than hand-writing `where: { tenantId, ... }` on ~40+ query
-call-sites across `server/src/routes/*`, which is exactly the kind of
-repetitive, easy-to-forget pattern that produces the "Cross-tenant data
-leak" entry in the overview's global risk register.
-
-**Layer 2 — database-enforced, via Postgres RLS.** Independent of whether
-the application layer gets it right, enable RLS on every tenant-scoped
-table and set a session variable (`SET app.current_tenant_id = $1`) at the
-top of each request/transaction. Example policy:
-
-```sql
-ALTER TABLE "Student" ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY tenant_isolation ON "Student"
-  USING ("tenantId" = current_setting('app.current_tenant_id')::int)
-  WITH CHECK ("tenantId" = current_setting('app.current_tenant_id')::int);
-```
-
-Applied identically (mechanically, via a migration-generation script — not
-hand-written per table) to `Student`, `FeePayment`, `Attendance`, `Expense`,
-`Staff`, `SalaryPayment`, `SalaryPayment`, `Class`, `Category`,
-`AcademicYear`, `ExpenseCategory`, `FeeStructure`, `OrgProfile`, `User`.
-This means even a raw SQL query, an admin script, or a future engineer who
-bypasses the Prisma extension cannot cross tenant boundaries — the failure
-mode becomes "query returns zero rows" rather than "query returns another
-tenant's financial records."
-
-**Connection pooling implication:** setting a per-request session variable
-means the DB connection carrying that session cannot be silently reused for
-a different tenant's request without resetting it first — this affects how
-RDS Proxy / pgbouncer pooling is configured. Use **transaction-mode
-pooling** (reset session state between transactions, which RDS Proxy and
-pgbouncer both support) rather than a naive "session pooling" mode, and set
-`app.current_tenant_id` inside the same transaction as the query, not as a
-separate connection-level `SET`.
-
-### 3.3 Roles become tenant-scoped
-
-Today, `Role.name` is globally `@unique` (Admin/Accountant/Teacher seeded
-as `isSystem` rows, per schema comment on `Role`). Two changes:
-- Add `tenantId` to `Role`, change the uniqueness constraint to
-  `@@unique([tenantId, name])`.
-- Keep the three system roles as a **template seeded per tenant at
-  provisioning time** (§6), not shared global rows — this lets a future
-  tenant customize a role's permission set without affecting others, while
-  still starting every tenant with the same Admin/Accountant/Teacher
-  baseline the app already ships.
-- `User.role` continues to store the role name; resolution to a permission
-  set becomes `(tenantId, roleName) → permissions` instead of just
-  `roleName → permissions`.
-
-### 3.4 JWT claims carry tenant context
-
-Add `tenantId` (and `tenantSlug`, to avoid a lookup on every request) to the
-JWT payload at login. `requireAuth` middleware sets `req.tenantId` from the
-verified token; this is the value both the Prisma Client Extension (§3.2
-Layer 1) and the RLS session variable (§3.2 Layer 2) consume. Reject any
-token whose `tenantId` doesn't match the resolved subdomain's tenant (§3.1)
-— this specifically prevents a stolen/replayed token for Tenant A being
-used against Tenant B's subdomain.
-
-### 3.5 `OrgProfile` becomes the tenant's branding row
-
-Per the schema comment already in the codebase, `OrgProfile` gains
-`tenantId` and stops being a singleton-by-convention — one row per tenant,
-looked up by `req.tenantId` instead of "the row with `id: 1`." This is the
-integration point with Phase 5's white-label theming (logo, header image,
-institution name/address already exist on this model; colors/theme tokens
-would be new fields added in Phase 5).
-
----
-
-## 4. Reference architecture diagram (textual)
+### 4.1 Reference request path
 
 ```
 Browser: masjid-umar.makthab.app
         │
         ▼
-CloudFront (Phase 2) ──▶ ALB ──▶ ECS Fargate task (Express API)
-        │                              │
-        │                     1. Extract subdomain → tenant slug
-        │                     2. Look up tenantId (cached: Class/
-        │                        AcademicYear-style reference-data
-        │                        cache, see §7)
-        │                     3. requireAuth: verify JWT, confirm
-        │                        token.tenantId === resolved tenantId
-        │                     4. Prisma Client Extension injects
-        │                        tenantId into every query (§3.2 L1)
-        │                     5. BEGIN; SET app.current_tenant_id;
-        │                        run query; COMMIT  (§3.2 L2, via
-        │                        RDS Proxy, transaction-mode pooling)
-        │                              │
-        │                              ▼
-        │                     RDS PostgreSQL (Phase 1)
-        │                     — RLS policies enforce tenant boundary
-        │                       even if step 4 is bypassed
+CloudFront ──▶ ALB ──▶ ECS Fargate (Express API)
+        │                    │
+        │           1. Extract subdomain → tenant slug
+        │           2. Resolve Tenant (cached); reject if not active
+        │           3. requireAuth: JWT.tenantId === resolved tenantId
+        │           4. Prisma extension injects tenantId (Layer 1)
+        │           5. BEGIN; SET LOCAL app.current_tenant_id; query; COMMIT (Layer 2)
+        │                    ▼
+        │           RDS PostgreSQL + RLS on all tenant-scoped tables
         │
-        └──▶ S3 (Phase 2) — objects under
-             s3://makthab-files/{tenantId}/receipts/...
-             s3://makthab-files/{tenantId}/payslips/...
-             s3://makthab-files/{tenantId}/reports/...
-             s3://makthab-files/{tenantId}/photos/...
-             (bucket policy / IAM condition keys scope access by prefix,
-              same defense-in-depth principle as RLS for the DB)
+        └──▶ S3 — s3://makthab-files/{tenantId}/{receipts|payslips|reports|photos}/…
+             (IAM condition keys scope by prefix)
+```
+
+**Platform control plane (Super Admin)** uses a separate host
+(`admin.makthab.app` or `platform.makthab.app`), never a customer subdomain.
+Super Admin JWTs carry `isSuperAdmin: true` and **no** customer `tenantId`
+(or an explicit `actingTenantId` when impersonating for support, audited).
+
+### 4.2 Data isolation (defense in depth)
+
+**Layer 1 — Prisma Client Extension (request-scoped):**
+
+- Auto-inject `tenantId` into `where` for find/update/delete/count/aggregate.
+- Auto-inject `tenantId` into create/createMany payloads.
+- Fail closed if request context has no `tenantId` (except allow-listed
+  platform/Super Admin repositories).
+
+**Layer 2 — Postgres RLS:**
+
+```sql
+ALTER TABLE "Student" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "Student" FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON "Student"
+  USING ("tenantId" = current_setting('app.current_tenant_id', true)::int)
+  WITH CHECK ("tenantId" = current_setting('app.current_tenant_id', true)::int);
+```
+
+Generate policies mechanically for every tenant-scoped table. Use
+**transaction-mode** pooling (RDS Proxy / pgbouncer) and set
+`app.current_tenant_id` with `SET LOCAL` inside the same transaction as the
+query so pooled connections cannot leak tenant context.
+
+**Layer 3 — object storage:** keys under `{tenantId}/…`; bucket policy /
+IAM condition keys deny cross-prefix access.
+
+### 4.3 Tenant identification & JWT
+
+- Edge: subdomain → slug → `Tenant.id` (in-process LRU cache; invalidate on
+  tenant status change).
+- Login issues JWT with `tenantId`, `tenantSlug`, role, permission matrix.
+- Middleware rejects JWT whose `tenantId` ≠ subdomain-resolved tenant
+  (blocks replay across tenants).
+- Suspended / offboarding tenants fail resolution before auth succeeds.
+
+### 4.4 Roles: tenant-scoped + platform Super Admin
+
+| Role plane | Scope | Responsibilities |
+|---|---|---|
+| **Super Admin** (new) | Platform-wide | Tenant CRUD/provisioning, suspend/reactivate, quotas, feature toggles, cross-tenant health, support impersonation (audited), platform audit |
+| **Tenant Admin** | One tenant | Existing Admin matrix: users, roles, org profile, full module access |
+| **Accountant / Teacher / custom** | One tenant | Existing permission matrix, seeded per tenant |
+
+Schema changes:
+
+- `Role`: add `tenantId`; `@@unique([tenantId, name])`; system roles seeded
+  **per tenant** at provision time (not shared global rows).
+- `User.role` still stores role name; resolution is `(tenantId, roleName)`.
+- Super Admin users live in a **platform** tenant (`slug: platform`) **or** a
+  dedicated `isSuperAdmin` flag with `tenantId` null — prefer
+  `isSuperAdmin` + null `tenantId` so platform users never appear in customer
+  user lists. Platform routes bypass RLS via a DB role that is `BYPASSRLS`
+  **only** for the Super Admin connection path (or use `SET LOCAL
+  app.current_tenant_id` when acting on a specific tenant). Prefer the latter
+  for least privilege.
+
+### 4.5 `Tenant` model & configuration surface
+
+```text
+Tenant {
+  id, slug (unique), name,
+  status: provisioning | active | suspended | offboarding | deleted,
+  planCode?,                        -- free | standard | enterprise (extensible)
+  quotasJson,                       -- maxUsers, maxStudents, maxStorageMb, ...
+  featureFlagsJson,                 -- { reportsExcel: true, selfSignup: false, ... }
+  primaryContactEmail?,
+  createdAt, updatedAt, provisionedAt?, suspendedAt?
+}
+```
+
+- `OrgProfile` gains `tenantId` (one branding row per tenant) — fulfills the
+  existing schema comment seam; integrates with Phase 5 white-label.
+- Quotas enforced in middleware / service layer (soft warn + hard block).
+- Feature flags read once per request into context; client receives a
+  bootstrapped flag map from `/api/v1/tenant/config`.
+
+### 4.6 Unique constraints & indexes (mechanical checklist)
+
+Every current global uniqueness becomes tenant-prefixed:
+
+| Model | Today | After |
+|---|---|---|
+| Student | `admissionNo` | `@@unique([tenantId, admissionNo])` |
+| FeePayment | `receiptNo` | `@@unique([tenantId, receiptNo])` |
+| Expense | `voucherNo` | `@@unique([tenantId, voucherNo])` |
+| Class / Category / AcademicYear / ExpenseCategory | `name` | `@@unique([tenantId, name])` |
+| Role | `name` | `@@unique([tenantId, name])` |
+| User | `username`, `email`, `phone` | `@@unique([tenantId, …])` (null-safe email/phone strategy documented in migration) |
+| Attendance | `[studentId, date]` | keep; student already tenant-scoped |
+| FeeStructure / SalaryPayment | existing composites | add `tenantId` to model + leading index |
+
+Indexes: `tenantId` as **leading** column on primary lookup indexes
+(e.g. `@@index([tenantId, status])` on Student).
+
+**Tenant-scoped models (all of them except pure code constants):** Student,
+FeePayment, Attendance, Expense, Staff, SalaryPayment, Class, Category,
+AcademicYear, ExpenseCategory, FeeStructure, OrgProfile, User, Role,
+RefreshSession, OtpChallenge, PasswordResetToken, UserApprovalAudit,
+AdminNotification, RolePermissionAudit, AuditLog. `PERMISSION_CATALOG` in
+`@makthab/shared` stays global (code, not data).
+
+---
+
+## 5. Governance model — Super Admin & tenant lifecycle
+
+### 5.1 Organizational changes
+
+| Change | Owner | Notes |
+|---|---|---|
+| Create **Platform Ops** function (even if 1 person) | Business | Owns Super Admin credentials, onboarding runbook, quota policy |
+| Separate Super Admin from any customer Admin account | Security | No shared passwords; break-glass procedure in IR playbook (Phase 3) |
+| Tenant onboarding SLA + checklist | Platform Ops | Scriptable provision → credential handoff (WhatsApp-first) → smoke test |
+| Quota / plan catalog | Product + Platform Ops | Start with one paid plan + generous defaults; avoid billing engine until revenue exists |
+| Feature-toggle ownership | Product | Flags defined in code catalog; values overridden per tenant in DB |
+| Support impersonation policy | Security | Time-boxed, reason-coded, written to platform audit log |
+
+### 5.2 Super Admin responsibilities (MVP → later)
+
+**MVP (this plan):**
+
+1. Create / activate / suspend tenants.
+2. Trigger provisioning (seed roles, reference data, initial Admin user,
+   OrgProfile, S3 prefix verification).
+3. Set quotas and feature flags.
+4. View platform dashboard: tenant list, status, basic usage counters.
+5. Initiate offboarding export + schedule hard delete after retention.
+
+**Later (post-MVP, not blocking Phase N exit):**
+
+- Self-serve signup for new Masajid (paid).
+- Billing / invoicing integration.
+- Automated capacity recommendations.
+- Customer-facing status page.
+
+### 5.3 Tenant lifecycle
+
+```
+requested ──► provisioning ──► active ──┬──► suspended ──► active (reactivate)
+                                        │
+                                        └──► offboarding ──► retention hold ──► deleted
+```
+
+1. **Provision:** `Tenant` row → seed reference data + system roles → create
+   initial Staff+User (Admin) → OrgProfile → verify S3 prefix IAM → wildcard
+   DNS already covers `{slug}.makthab.app` → status `active`.
+2. **Suspend:** immediate login/API block via status check; data retained.
+3. **Offboard:** Excel full export (extend existing ExcelJS reports) → signed
+   S3 URL → retention 30–90 days (align with security/compliance doc) →
+   cascade delete DB rows + S3 prefix → audit event.
+4. **Support access:** Super Admin “act as tenant” sets `actingTenantId`,
+   all queries RLS-scoped; every action audited.
+
+---
+
+## 6. Single migration strategy (executable, zero-downtime)
+
+**One strategy only:** *expand → backfill → dual-read → enforce → provision
+second tenant → harden.* Never fork the live Masjid onto a parallel stack.
+
+Principles:
+
+1. **Additive schema first** — nullable `tenantId`, app ignores it.
+2. **Backfill Tenant #1** representing the current live Masjid; all existing
+   rows get that id in online batches (no table locks that block writes).
+3. **Compatibility window** — old clients/JWTs without `tenantId` still work
+   because middleware defaults to Tenant #1 when only one active tenant
+   exists **or** when `LEGACY_SINGLE_TENANT=true` (feature flag, removed after
+   cutover).
+4. **Enforce only after** backfill verification + isolation suite green on
+   staging with two synthetic tenants.
+5. **Cutover** is a config/flag flip + JWT claim addition, not a data move.
+6. **Rollback** at every phase means re-enabling the compatibility flag and/or
+   deploying the previous ECS task definition; data migrations are
+   expand/contract so roll-forward is preferred for schema, roll-back for app.
+
+**Data integrity guarantees for the current tenant:**
+
+- Pre/post row-count checksums per table (students, fee payments, expenses,
+  attendance, salaries) must match after backfill.
+- Financial totals (sum `amountPaid`, sum `Expense.amount`) must match within
+  rounding tolerance of 0.
+- No unique-constraint rewrite goes live until Tenant #1 backfill is 100%
+  and verified (otherwise uniqueness widening could hide duplicates).
+
+---
+
+## 7. Phase-by-phase plan (Phase 0 → Phase 6)
+
+Phases below are **this document’s** migration phases (0–6). They map to
+overview “Phase 4” workstreams 4a–4d, expanded with governance, MVP scope,
+rollback, and metrics. Prerequisites from redesign Phases 1–3 must be green
+before Phase 1 here.
+
+```
+Phase 0  Readiness & governance design
+   │
+Phase 1  Additive schema + Tenant #1 backfill          (compat mode)
+   │
+Phase 2  App tenancy plumbing (resolve, JWT, repos)    (still one tenant)
+   │
+Phase 3  Enforcement (NOT NULL, uniques, RLS) + CI isolation suite
+   │
+Phase 4  Super Admin control plane + provisioning MVP
+   │
+Phase 5  Second real tenant + production isolation proof
+   │
+Phase 6  Ops hardening (quotas, rate limits, DR drills, offboarding)
 ```
 
 ---
 
-## 5. Data partitioning strategy
+### Phase 0 — Readiness, go/no-go, and governance design
 
-- **Column placement:** `tenantId Int` (FK to a new `Tenant` model) added to
-  every model currently listed in `schema.prisma` except pure reference
-  data that's genuinely global across the whole product (there isn't much —
-  even `ExpenseCategory` and `Category` need to become tenant-scoped, since
-  different Masajid will want different category lists; only the
-  `PERMISSION_CATALOG` constant in `@makthab/shared` stays global, since
-  it's code, not data).
-- **New `Tenant` model:** `id`, `slug` (unique, used for subdomain
-  resolution), `name`, `status` (active/suspended/offboarding), `createdAt`,
-  plan/billing fields as needed later.
-- **Indexing:** every tenant-scoped table gets `tenantId` as the **leading
-  column** of its primary lookup indexes, e.g. `@@index([tenantId, status])`
-  on `Student` (currently just `@@index([status])`), `@@index([tenantId,
-  feeYear, feeMonth])` on `FeePayment`. This matches the query pattern
-  every request will actually use (always filtered by tenant first) and
-  keeps index scans cheap as tenant count grows — without this, a global
-  index on `status` alone gets progressively less selective as more
-  tenants' data accumulates in the same table.
-- **Unique constraints need `tenantId` prefixed in:** `Student.admissionNo`,
-  `FeePayment.receiptNo`, `Expense.voucherNo`, `Class.name`,
-  `Category.name`, `AcademicYear.name`, `ExpenseCategory.name`,
-  `Role.name` (§3.3), `User.username`/`User.email` — every one of these is
-  currently globally unique and must become `@@unique([tenantId, x])`,
-  otherwise Tenant B can't reuse "LKG" as a class name or "admin" as a
-  username just because Tenant A already has one. This is the single
-  largest mechanical change in the migration (§8).
-- **RLS policy design:** see §3.2 for the canonical policy shape; generate
-  one per tenant-scoped table via a small script rather than hand-writing
-  ~13 nearly-identical policies (reduces the chance of one table being
-  missed — a missed RLS policy is silently no worse than today, but it's a
-  gap worth catching with a CI check, see §10).
-- **Connection pooling:** RDS Proxy in transaction-mode pooling (§3.2),
-  sized for the concurrency profile described in
-  [02-cloud-deployment-aws.md](./02-cloud-deployment-aws.md) — this doc
-  doesn't re-derive those numbers, just notes that pool sizing needs
-  revisiting once real tenant-count/concurrency assumptions exist, since
-  "N tenants sharing a pool" behaves differently under load than the
-  single-tenant baseline that doc sizes for.
+| | |
+|---|---|
+| **Objective** | Confirm business case; freeze tenancy model; define Super Admin org duties; inventory schema/API blast radius. |
+| **MVP scope** | Demand confirmation checklist; decision record (Option A+RLS); inventory of all `@unique` / repositories / file key writers; Super Admin RACI; success metric baseline from staging. |
+| **Key changes** | No production code required. Update this ADR with sign-off. Ensure Postgres path is production-proven (redesign Ph.1–2), security baseline live (Ph.3), S3 adapter in use. |
+| **Data model** | None. |
+| **Services / deploy / monitoring** | Document required CloudWatch dimensions (`tenantId` to be added later). Confirm wildcard cert / CloudFront plan for `*.makthab.app`. |
+| **Risks** | Starting without demand (wasted spend). Incomplete inventory → missed unique constraint in Phase 3. |
+| **Rollback** | N/A (docs only). Gate: do not open Phase 1 without §6.1 demand sign-off. |
+| **Success criteria / metrics** | Signed go/no-go; complete table/endpoint inventory checked into docs; RACI named; staging Postgres availability ≥99.5% over prior 14 days. |
 
 ---
 
-## 6. Tenant provisioning / onboarding & offboarding
+### Phase 1 — Additive schema & Tenant #1 backfill (zero behavior change)
 
-### Onboarding (target: fully scriptable, manual trigger initially; self-serve UI is Phase 4c, see §8)
-
-1. Create `Tenant` row (slug, name, status = `provisioning`).
-2. Seed reference data scoped to the new `tenantId`, following the exact
-   pattern the app already uses for its single-tenant seed (academic years,
-   classes, expense categories) — reuse that seed script's structure,
-   parameterized by `tenantId` instead of hard-coded.
-3. Seed the three system `Role` rows (Admin/Accountant/Teacher) with the
-   default `PERMISSION_CATALOG`-derived permission sets, scoped to the new
-   `tenantId` (§3.3).
-4. Create the initial `Staff` + `User` (Admin role) record for the
-   customer's first login; deliver credentials out-of-band (not email,
-   given no email infra is assumed yet — matches the app's existing
-   WhatsApp-first communication pattern).
-5. Create an `OrgProfile` row for the tenant (§3.5) — name/address at
-   minimum; branding assets added by the customer post-login.
-6. Provision the S3 prefix (`s3://makthab-files/{tenantId}/...`) — no
-   explicit "creation" needed for an S3 prefix, but apply/verify the IAM
-   bucket policy condition scoping access to it (Phase 3's security
-   baseline).
-7. Register the subdomain (`{slug}.makthab.app`) — either a wildcard
-   CloudFront/ALB config (provisioned once, covers all tenants) or a
-   per-tenant DNS record, depending on what Phase 2's actual CloudFront
-   setup allows; prefer the wildcard approach so onboarding doesn't require
-   an infra change per tenant.
-8. Flip `Tenant.status` to `active`.
-
-### Offboarding
-
-1. Flip `Tenant.status` to `suspended` immediately (blocks login via the
-   tenant-resolution check in §3.1/3.4) if this is an involuntary/non-payment
-   offboarding; skip straight to step 2 for a voluntary customer-initiated
-   export.
-2. **Data export:** generate a full export of the tenant's data — reuse the
-   app's existing Excel report infrastructure (ExcelJS is already a
-   dependency for reports) rather than building new export tooling; a
-   "full data dump" is a natural extension of the existing per-report Excel
-   generation, one workbook per entity or one multi-sheet workbook.
-3. Deliver the export to the customer (a signed, time-limited S3 URL is
-   simplest given files are already in S3 post-Phase-2).
-4. **Retention window:** hold the tenant's data (DB rows + S3 objects) for
-   a defined period post-offboarding (align this with whatever [03-security.md](./03-security.md)'s
-   compliance section lands on for data-retention policy — this doc doesn't
-   set that number, since it's a compliance/legal decision, not an
-   architecture one — but a reasonable operational default is 30-90 days
-   before hard deletion, giving the customer a recovery window).
-5. **Hard deletion:** after the retention window, delete the tenant's rows
-   (a `tenantId`-scoped cascade delete, or a scripted per-table delete) and
-   the S3 prefix. Log the deletion event (who/when/why) for audit purposes.
+| | |
+|---|---|
+| **Objective** | Introduce `Tenant` and nullable `tenantId` everywhere without changing runtime behavior. |
+| **MVP scope** | `Tenant` model; nullable `tenantId` FK on all tenant-scoped tables; composite indexes added **non-uniquely** alongside existing uniques; online backfill job; dual-provider migrations (Postgres + generated SQLite). |
+| **Key changes** | Prisma schema expand; migration SQL; one-shot/batch backfill script; seed creates Tenant #1 for fresh installs. App code still ignores `tenantId`. |
+| **Data model** | `Tenant` + nullable `tenantId` columns; existing `@unique` **unchanged** yet (avoid blocking inserts mid-migration). |
+| **Services** | Optional admin-only backfill status endpoint (Super Admin later); otherwise CLI runbook. |
+| **Deploy** | Rolling ECS deploy; migration runs as expand-only (`ADD COLUMN` nullable). |
+| **Monitoring** | Backfill progress gauge; alert if null `tenantId` count > 0 after job completes. |
+| **Risks** | Long locks on large tables — mitigate with batched `UPDATE … WHERE id BETWEEN`. SQLite test DB drift — regenerate sqlite schema in CI. |
+| **Rollback** | Redeploy previous app (still ignores column). Columns may remain (safe). Do not drop columns in emergency rollback. |
+| **Success criteria / metrics** | 0 downtime (health checks green throughout); null `tenantId` count = 0; row-count and financial checksums match pre-backfill snapshot; existing Jest suite green; single-tenant UX unchanged. |
 
 ---
 
-## 7. Scalability patterns
+### Phase 2 — Tenancy plumbing (compat mode, still one logical tenant)
 
-- **Autoscaling:** ECS Fargate service auto-scaling (established in Phase 2)
-  with target-tracking policies on CPU utilization and ALB request count
-  per target — this doesn't change structurally for multi-tenancy, since
-  all tenants share the same Fargate service/task pool in Model A. The
-  thing that *does* change is capacity planning: size baseline task count
-  and scaling thresholds off aggregate multi-tenant load, not the
-  single-tenant baseline Phase 2 was sized for.
-- **Caching:** the app's genuinely global-ish reference data (per tenant:
-  `Class`, `Category`, `AcademicYear`, `ExpenseCategory`, `Role`
-  permission sets, `OrgProfile` branding) changes rarely and is read on
-  nearly every request (e.g. every student list render needs class names).
-  Cache these per-tenant with a short TTL or explicit invalidation on
-  write (an in-process LRU cache is enough at this scale; do not reach for
-  ElastiCache/Redis until there's a measured need — matches the overview's
-  "don't over-engineer for an app this size" principle). **Financial data
-  (`FeePayment`, `SalaryPayment`, `Expense`) and `Student`/`Attendance`
-  records are not cached** — they're written frequently and correctness
-  matters more than shaving a query.
-- **Per-tenant rate limiting:** protect against one noisy or misbehaving
-  tenant (buggy integration, scraping, or a runaway report-generation loop)
-  degrading service for others. Implement a token-bucket limiter keyed by
-  `tenantId` at the Express middleware layer (a small, well-understood
-  library-based approach is sufficient here — no need for API-Gateway-level
-  throttling given the ALB→Fargate architecture from Phase 2). Set limits
-  generously for normal usage (this app's per-tenant traffic is inherently
-  low — a school office, not a high-traffic consumer app) and alert (not
-  just block) when a tenant approaches its limit, since it's more likely a
-  bug than abuse at this product's scale.
-- **Observability per tenant:** tag CloudWatch log entries and custom
-  metrics with `tenantId` (structured logging, not just free text) so
-  per-tenant dashboards and noisy-neighbor detection are queryable without
-  re-architecting logging later. This is cheap to add now and expensive to
-  retrofit — treat it as part of Phase 4's definition of done, not a
-  follow-up.
+| | |
+|---|---|
+| **Objective** | Wire resolution, JWT claims, and repository scoping behind a flag while production remains single-tenant. |
+| **MVP scope** | Subdomain (or Host header) resolver; `req.tenantId`; JWT `tenantId`/`tenantSlug`; Prisma extension or repository helper injecting filters; S3 key prefix helper `{tenantId}/…` writing **new** objects under prefix while reading old unprefixed keys (compat); `LEGACY_SINGLE_TENANT` default true. |
+| **Key changes** | Middleware order: resolve tenant → auth → set RLS session var (no-op until RLS on) → handlers. Login includes claims. Client may ignore new claims. |
+| **Data model** | No breaking constraint changes. |
+| **Services** | All routes receive context; platform routes stubbed/disabled. |
+| **Deploy** | Feature flag off for enforcement; staging enables subdomain for Tenant #1 slug. |
+| **Monitoring** | Log `tenantId` on every request (structured); metric `requests_by_tenant`. |
+| **Risks** | Partial filter injection (some repos missed) — mitigate with inventory checklist + shadow mode: log queries that would have returned cross-tenant rows (none expected). |
+| **Rollback** | Set `LEGACY_SINGLE_TENANT=true` and/or disable resolver; previous task definition. |
+| **Success criteria / metrics** | p95 latency regression &lt; 10% vs baseline; 100% of authenticated requests carry resolved `tenantId` in logs; zero functional regressions on smoke path (login→admit→fee→attendance→expense→report→backup). |
 
 ---
 
-## 8. Migration/implementation plan
+### Phase 3 — Enforcement (NOT NULL, tenant uniques, RLS) + isolation CI
 
-Fits the overview's **8-12 week** window for Phase 4, split into four
-sub-phases so risk is introduced incrementally rather than in one big-bang
-migration:
-
-| Sub-phase | Weeks | Scope | Exit criteria |
-|---|---|---|---|
-| **4a — Additive schema change** | 1-3 | Add `tenantId` (nullable) to every model in §5; create `Tenant` model; backfill every existing row with a single `Tenant` record representing the current live Masjid, so the running app doesn't break mid-migration. Add composite indexes. | App still runs exactly as today (single implicit tenant), `tenantId` present but not yet enforced. |
-| **4b — Enforcement** | 3-6 | Make `tenantId` `NOT NULL`; ship the Prisma Client Extension (§3.2 L1); enable RLS policies (§3.2 L2) table-by-table with a verification query after each; update all `@unique` constraints (§5) to be tenant-prefixed; add `tenantId`/`tenantSlug` to JWT (§3.4); wire subdomain resolution (§3.1). | The existing single tenant continues working end-to-end through the new tenant-aware path; the cross-tenant isolation test suite (§10) exists and passes trivially (only one tenant exists, but the plumbing is exercised). |
-| **4c — Provisioning + a second real tenant** | 6-9 | Build the onboarding script (§6) — CLI/admin-triggered is enough for now, a self-serve UI is a later product decision, not an architecture requirement of this phase; provision a genuine second tenant (even a demo/staging one) end-to-end; run the isolation test suite (§10) against real two-tenant data for the first time. | Two tenants coexist with verified isolation; onboarding runbook is documented and repeatable. |
-| **4d — Scale/ops hardening** | 9-12 | Per-tenant rate limiting, autoscaling threshold review, per-tenant observability tagging (§7); offboarding workflow (§6) implemented and dry-run tested. | Phase 4 exit criteria from the overview's §5 table met: isolation tests in CI, rate limits + autoscaling live. |
+| | |
+|---|---|
+| **Objective** | Make tenancy mandatory and DB-enforced without admitting a second customer yet. |
+| **MVP scope** | `tenantId NOT NULL`; rewrite `@unique` → `@@unique([tenantId, …])`; enable+force RLS table-by-table; transaction `SET LOCAL`; isolation Jest suite in CI (Postgres job); remove reliance on legacy JWT without tenant claims after dual-issue window. |
+| **Key changes** | Migration contract phase; CI: add `DATABASE_PROVIDER=postgresql` job with RLS; fail PRs that touch data-access without isolation tests. |
+| **Data model** | All checklist uniques updated; leading indexes finalized. |
+| **Services** | Fail closed if missing tenant context. |
+| **Deploy** | Expand→constrain migrations during low-traffic window; app that understands constraints deployed **before** NOT NULL if needed. |
+| **Monitoring** | Alert on RLS policy errors / `insufficient_privilege`; isolation suite required green. |
+| **Risks** | Missed unique → second tenant blocked later; RLS session leak across pool — transaction-mode pooling + concurrency test; SQLite cannot express RLS — keep SQLite for unit speed but **gate merges on Postgres isolation job**. |
+| **Rollback** | App rollback to Phase 2 build with `LEGACY_SINGLE_TENANT`; RLS policies can stay (still set session var). Reverting NOT NULL only if emergency and after assessing duplicates — prefer forward fix. |
+| **Success criteria / metrics** | Isolation suite 100% pass (even with one real + one synthetic tenant in staging); raw SQL RLS probe returns 0 cross-tenant rows; production Tenant #1 checksums unchanged; zero Sev-1 incidents during soak (min 7 days). |
 
 ---
 
-## 9. Risk assessment
+### Phase 4 — Super Admin control plane & provisioning MVP
+
+| | |
+|---|---|
+| **Objective** | Platform operators can provision and configure tenants without engineering runbooks as the only path. |
+| **MVP scope** | Super Admin auth; `POST/PATCH /platform/tenants`; provisioning service (seed roles, reference data, Admin user, OrgProfile); quotas + featureFlags CRUD; platform audit log; minimal platform UI **or** CLI + thin UI list (CLI-first acceptable for MVP). |
+| **Key changes** | Platform router mounted only on platform host; permissions catalog entry `platform.tenants`; WhatsApp/out-of-band credential delivery for first Admin. |
+| **Data model** | `quotasJson`, `featureFlagsJson`, `planCode` on `Tenant` if not already present; platform audit table or `AuditLog` with `tenantId` null + `entity=platform`. |
+| **Services** | Provisioning idempotent by `slug`; status state machine enforced. |
+| **Deploy** | Platform DNS + optional separate CloudFront behavior; no customer impact. |
+| **Monitoring** | Provisioning success/fail metrics; alert on stuck `provisioning` &gt; N minutes. |
+| **Risks** | Seed drift vs `seed.ts` — **derive provisioning from shared seed module**. Over-privileged Super Admin — MFA required (Phase 3 security MFA path). |
+| **Rollback** | Disable platform routes via flag; provisioning CLI remains. No customer data change. |
+| **Success criteria / metrics** | Repeatable provision of staging tenant in &lt; 15 minutes; state machine rejects illegal transitions; all platform mutating actions audited; Tenant #1 untouched. |
+
+---
+
+### Phase 5 — Second real tenant & production isolation proof
+
+| | |
+|---|---|
+| **Objective** | Prove two tenants coexist safely in production (demo or paying). |
+| **MVP scope** | Provision second tenant end-to-end; migrate any demo data; run full isolation suite against prod-like data; customer smoke tests on both subdomains; remove `LEGACY_SINGLE_TENANT`. |
+| **Key changes** | Wildcard DNS verified live; file writes only under `{tenantId}/`; optional background job to copy legacy unprefixed files into Tenant #1 prefix. |
+| **Data model** | Stable. |
+| **Services** | Rate-limit stubs keyed by tenant (full limits in Phase 6). |
+| **Deploy** | Standard rolling deploy; feature flag off for legacy mode. |
+| **Monitoring** | Per-tenant dashboards; error budget burn per tenant. |
+| **Risks** | Cross-tenant leak under real concurrency; noisy neighbor — mitigate with preliminary rate limits. |
+| **Rollback** | Suspend Tenant #2 (status) immediately — Tenant #1 unaffected; re-enable legacy flag only if Tenant #1 path regresses. |
+| **Success criteria / metrics** | Isolation suite green on staging **and** pre-prod; 0 cross-tenant reads/writes in 14-day soak; both tenants’ smoke paths pass; Tenant #1 financial checksums stable; availability ≥99.5% during soak. |
+
+---
+
+### Phase 6 — Scale, quotas, offboarding, DR (ops hardening)
+
+| | |
+|---|---|
+| **Objective** | Production-grade multi-tenant operations: fairness, observability, exit path, disaster recovery. |
+| **MVP scope** | Per-tenant token-bucket rate limits; enforce quotas (users/students/storage); offboarding export + retention job; autoscaling threshold review under dual-tenant load; backup/restore drill **for a single tenant export** and full RDS restore; runbooks. |
+| **Key changes** | Middleware rate limits; usage counters; offboarding worker; CloudWatch alarms on per-tenant 5xx and throttle events. |
+| **Data model** | Optional `TenantUsage` daily rollup for quotas. |
+| **Services / deploy / monitoring** | Load test with concurrent tenants; document RPO/RTO (align with cloud deploy doc); drill annually. |
+| **Risks** | Throttles too aggressive → false positives — alert before hard block. Incomplete offboarding leaving PII — checklist + automated verify-empty queries. |
+| **Rollback** | Raise/disable rate limits via config; pause retention job. |
+| **Success criteria / metrics** | Overview Phase 4 exit criteria met: isolation in CI, rate limits + autoscaling live; offboarding dry-run verified; RPO/RTO drill signed off; availability target path to ≥99.9%; p95 list/detail &lt; 300ms under dual-tenant reference load. |
+
+---
+
+## 8. Data migration strategy (detail)
+
+### 8.1 Online backfill (Phase 1)
+
+```text
+1. Snapshot checksums: COUNT(*), SUM(amountPaid), SUM(amount), …
+2. INSERT Tenant { slug: <current>, name: <OrgProfile.name>, status: active }
+3. For each table in FK-safe order:
+     UPDATE "Student" SET "tenantId" = $id WHERE "tenantId" IS NULL AND id BETWEEN …;
+4. Re-run checksums; assert equality
+5. Assert COUNT(*) FILTER (WHERE "tenantId" IS NULL) = 0 for every table
+```
+
+FK-safe order sketch: `Tenant` → independent refs (AcademicYear, ExpenseCategory,
+Category, Class, Role, OrgProfile, Staff) → User → Student → FeeStructure /
+FeePayment / Attendance / Expense / SalaryPayment → auth satellite tables →
+AuditLog / RolePermissionAudit.
+
+### 8.2 Constraint cutover (Phase 3)
+
+1. Create new unique indexes concurrently (`CREATE UNIQUE INDEX CONCURRENTLY`
+   on Postgres) on `(tenantId, …)`.
+2. Deploy app that uses new constraints.
+3. Drop old single-column uniques.
+4. Set `NOT NULL` on `tenantId`.
+5. Enable RLS + FORCE; verify with policy probe.
+
+### 8.3 File objects
+
+1. New writes: `{tenantId}/{prefix}/{file}`.
+2. Reads: try prefixed key, fall back to legacy key for Tenant #1.
+3. Optional copy job; delete legacy only after verification.
+
+### 8.4 Second tenant
+
+No data move from Tenant #1. Provision empty tenant + seed. If a second
+existing Masjid must import history, reuse `migrate-from-xlsx.ts` parameterized
+by `tenantId` (idempotent).
+
+---
+
+## 9. Testing plan
+
+### 9.1 Cross-tenant isolation suite (release-blocking)
+
+1. Provision Tenant A and Tenant B with distinct students, fees, attendance,
+   expenses, staff, salaries, roles, OrgProfiles.
+2. Authenticate as Tenant A Admin.
+3. For **every** `/api/v1` route: attempt read/update/delete of Tenant B IDs.
+4. **Expect 403/404 only** — never 200 with B’s payload; never successful mutate.
+5. List/search endpoints must not include B rows.
+6. JWT/subdomain mismatch rejected.
+7. Raw SQL with RLS session = A returns zero B rows (Layer 2 proof).
+8. Concurrent A+B requests show no session-variable bleed.
+
+**CI:** Postgres job on every PR touching `server/src/**`, Prisma schema, or
+platform routes. Treat failure as build-breaking.
+
+### 9.2 Compatibility & regression
+
+- Existing SQLite Jest suite remains for fast feedback (RLS not available).
+- Full smoke: login → admit → fee+PDF → attendance → expense → reports → backup
+  on Tenant #1 after every phase.
+- Checksum job in staging after each migration.
+
+### 9.3 Non-functional
+
+- Dual-tenant load test (cloud deploy doc methodology).
+- Rate-limit tests (Phase 6).
+- Provisioning idempotency tests (Phase 4).
+
+---
+
+## 10. Rollout, monitoring, and rollback (ops)
+
+### 10.1 High-level rollout
+
+| Wave | Environment | Gate |
+|---|---|---|
+| W0 | Dev / CI | Phase 0 inventory + Phase 1 migrations green |
+| W1 | Staging | Phases 1–3 complete; isolation suite green; Tenant #1 clone verified |
+| W2 | Production | Phase 1–2 only (compat); soak |
+| W3 | Production | Phase 3 enforcement after staging soak ≥7 days |
+| W4 | Production | Phase 4 platform; provision staging-like demo tenant in prod **or** first customer in Phase 5 |
+| W5 | Production | Phase 5 second tenant; Phase 6 hardening |
+
+Prefer **weekday low-traffic** windows for constraint/RLS enablement; use ECS
+circuit breaker / previous task definition for app rollback.
+
+### 10.2 Observability
+
+- Structured logs: `tenantId`, `tenantSlug`, `requestId`, `userId`, `route`.
+- Metrics: request rate/latency/5xx **by tenant**; pool wait time; rate-limit
+  hits; provisioning duration; null-tenant-id gauge (should stay 0).
+- Alerts: isolation test failure (CI), RLS errors, tenant stuck provisioning,
+  single-tenant error-budget burn, cross-tenant auth mismatch count &gt; 0.
+- Dashboards: platform overview (Super Admin) + per-tenant health.
+
+### 10.3 Backups & DR
+
+- Continue automated RDS snapshots + S3 versioning (Phase 2/3 baseline).
+- **Tenant-level:** export workbook + S3 prefix sync for offboarding and
+  logical recovery.
+- **Platform-level:** full RDS point-in-time restore runbook; annual drill.
+- RPO/RTO targets: inherit from [02-cloud-deployment-aws.md](./02-cloud-deployment-aws.md);
+  multi-tenant does not relax them.
+
+### 10.4 Universal rollback cheat sheet
+
+| Symptom | Immediate action |
+|---|---|
+| Customer outage after app deploy | ECS rollback to previous task definition |
+| Suspected cross-tenant leak | Suspend affected tenant(s); rotate JWTs; preserve DB for forensics; hotfix |
+| Bad migration | Stop roll-forward; restore from PITR only if data corrupted (last resort) |
+| Second tenant mis-provisioned | Set status `suspended` / `offboarding`; Tenant #1 continues |
+| Rate-limit storm | Disable limiter via config flag |
+
+---
+
+## 11. Risk register (tenancy-specific)
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| **Cross-tenant data leak** (missed `tenantId` filter, RLS policy gap, or subdomain-spoofing) | Low-Med during 4b, should trend to Low after | Critical | Two independent enforcement layers (§3.2); automated isolation test suite in CI (§10) as a hard gate, not just a manual QA pass; code-review checklist item requiring any new table/query to justify its tenant-scoping. |
-| **A missed `@@unique` constraint** blocks a second tenant from using a name the first tenant already used (e.g. class "I") | Medium during 4b | Medium (functional bug, not a security leak) | Enumerate every current `@unique`/`@@unique` in `schema.prisma` explicitly (done in §5) and treat each as a checklist item during 4b, not something to catch ad hoc. |
-| **RLS session-variable leak across pooled connections** (a connection reused for Tenant B without resetting `app.current_tenant_id`) | Low, but high-severity if it happens | Critical | Transaction-mode pooling (§3.2) specifically to avoid this class of bug; add a regression test that opens two rapid concurrent requests from different tenants and asserts no cross-contamination. |
-| **Provisioning script drifts from the real seed requirements** as the schema evolves post-launch (someone adds a new reference-data table and forgets to update onboarding) | Medium over time | Medium | Keep the provisioning script co-located with and derived from the same seed logic the single-tenant app already uses (§6 step 2), rather than a hand-maintained duplicate. |
-| **Multi-tenancy ships but isn't sold** | Medium | High (wasted engineering spend) | Already the top entry in the overview's global risk register — the mitigation is sequencing (confirm demand before starting this phase at all), not anything inside this document's technical design. |
+| Cross-tenant data leak | Low–Med during Phase 3 | Critical | Dual layers + CI isolation suite + code-review checklist for new tables |
+| Missed `@@unique([tenantId, …])` | Med in Phase 3 | Med | Inventory from Phase 0 as checklist |
+| RLS session leak via pool | Low | Critical | `SET LOCAL` + transaction pooling + concurrency test |
+| Provisioning seed drift | Med over time | Med | Shared module with `seed.ts` |
+| Multi-tenancy built but unsold | Med | High | Phase 0 go/no-go; sequence after Ph.1–3 |
+| Super Admin credential compromise | Low | Critical | MFA, platform host only, break-glass, audit |
+| Zero-downtime violation during NOT NULL | Low–Med | High | Expand/contract; concurrent indexes; soak on staging |
 
 ---
 
-## 10. Testing/validation plan
+## 12. Mapping to overview Phase 4 sub-phases
 
-The **cross-tenant isolation test suite is the centerpiece** of validating
-this phase — more important than conventional feature test coverage, given
-what's at stake (financial + minor data for potentially many independent
-customers on shared infrastructure).
+| This plan | Overview §8 label | Notes |
+|---|---|---|
+| Phase 0 | (preamble) | Demand + governance |
+| Phase 1 | 4a Additive schema | Backfill Tenant #1 |
+| Phase 2 | 4a/4b bridge | Plumbing + compat |
+| Phase 3 | 4b Enforcement | RLS + uniques + CI |
+| Phase 4 | 4c Provisioning (platform) | Super Admin MVP |
+| Phase 5 | 4c Second tenant | Production proof |
+| Phase 6 | 4d Scale/ops | Quotas, limits, DR, offboarding |
 
-**What it tests, concretely:**
-- Provision two test tenants (Tenant A, Tenant B) with distinct data:
-  students, fee payments, attendance, expenses, staff, salary payments,
-  roles, and an `OrgProfile` row each.
-- Authenticate as a Tenant A user (Admin role, to rule out permission
-  checks masking a tenancy bug).
-- For **every** API endpoint the app exposes (walk the full route table —
-  students, fees, attendance, expenses, staff, salaries, reports,
-  reference/classes/academic-years/expense-categories, dashboard,
-  admin/backup, auth), attempt to read, update, and delete Tenant B's
-  record IDs using Tenant A's authenticated session.
-- **Expected result for every single one: 403 or 404, never 200 and never
-  Tenant B's data in the response body.** Any endpoint returning Tenant B
-  data, or successfully mutating/deleting it, is a release-blocking failure.
-- Additionally test the **list/search endpoints** specifically (not just
-  get-by-id) — confirm Tenant A's student list, defaulters report, etc.
-  never contains a Tenant B row, since list endpoints are the easiest place
-  to miss a filter.
-- Test the **JWT/subdomain mismatch** case from §3.4 directly: a valid
-  Tenant A token presented against Tenant B's subdomain must be rejected.
-- Test the **RLS layer in isolation** from the application layer: run a raw
-  SQL query (bypassing Prisma entirely, simulating "what if the app-layer
-  filter has a bug") with the RLS session variable set to Tenant A, and
-  confirm zero Tenant B rows are returned — this is what proves Layer 2
-  (§3.2) is actually load-bearing and not just theoretical defense-in-depth.
+---
 
-**Where it runs:** added to the existing Jest integration suite pattern
-(`server/`, run via `DATABASE_URL=... npx jest`, per `CLAUDE.md`), and per
-the overview's §7 success metrics, **must run in CI on every PR that
-touches a data-access path** (routes, Prisma schema, the Client Extension
-itself) — not just before release. Treat a failure here with the same
-severity as a broken build, not a flaky test to retry.
+## 13. Document history
 
-**Non-functional validation:** once 4c's second real tenant exists, run the
-same load-test approach [02-cloud-deployment-aws.md](./02-cloud-deployment-aws.md)
-defines for the single-tenant baseline, but with concurrent traffic from
-both tenants simultaneously, to validate the rate-limiting (§7) and
-connection-pool-sizing assumptions (§5) under realistic multi-tenant
-concurrency rather than assuming they hold.
+| Date | Change |
+|---|---|
+| 2026-08-07 | Expanded into full Phase 0–6 migration plan: Option A/B/C comparison (incl. microservice fabric), Super Admin governance, zero-downtime strategy, MVP/risks/rollback/metrics per phase, data migration & ops sections. Preserves prior recommendation (shared schema + RLS + subdomain + hybrid escape hatch). |
