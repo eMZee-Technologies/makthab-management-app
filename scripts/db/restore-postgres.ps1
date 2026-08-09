@@ -164,6 +164,14 @@ try {
   if (-not $TargetDb) {
     $TargetDb = if ($manifest) { $manifest.database } else { $conn.Db }
   }
+  if ([string]::IsNullOrEmpty($TargetDb)) {
+    throw "Target database name must be a non-empty string"
+  }
+  # $TargetDb may come from an untrusted backup manifest -- never interpolate
+  # it raw into SQL text. Escape once here: Sql for '...' string-literal
+  # contexts, Ident for "..." quoted-identifier contexts.
+  $TargetDbSql = $TargetDb -replace "'", "''"
+  $TargetDbIdent = $TargetDb -replace '"', '""'
 
   $bin = Resolve-PgBinDir -Override $PgBinDir
   $pgRestore = Join-Path $bin "pg_restore.exe"
@@ -206,21 +214,21 @@ try {
     # --- Drop/create target DB --------------------------------------------
     if ($DropExisting) {
       Step "Dropping existing connections to '$TargetDb' (if any)" {
-        $sql = "select pg_terminate_backend(pid) from pg_stat_activity where datname = '$TargetDb' and pid <> pg_backend_pid();"
+        $sql = "select pg_terminate_backend(pid) from pg_stat_activity where datname = '$TargetDbSql' and pid <> pg_backend_pid();"
         & $psql -h $PgHost -p $PgPort -U $PgUser -d postgres -c $sql | Out-Null
         $global:LASTEXITCODE = 0
       }
       Step "Dropping database '$TargetDb' if it exists" {
-        & $psql -h $PgHost -p $PgPort -U $PgUser -d postgres -c "drop database if exists `"$TargetDb`";"
+        & $psql -h $PgHost -p $PgPort -U $PgUser -d postgres -c "drop database if exists `"$TargetDbIdent`";"
       }
       Step "Creating database '$TargetDb'" {
-        & $psql -h $PgHost -p $PgPort -U $PgUser -d postgres -c "create database `"$TargetDb`" encoding 'UTF8';"
+        & $psql -h $PgHost -p $PgPort -U $PgUser -d postgres -c "create database `"$TargetDbIdent`" encoding 'UTF8';"
       }
     } else {
       Step "Ensuring database '$TargetDb' exists" {
-        $exists = & $psql -h $PgHost -p $PgPort -U $PgUser -d postgres -t -A -c "select 1 from pg_database where datname = '$TargetDb';"
+        $exists = & $psql -h $PgHost -p $PgPort -U $PgUser -d postgres -t -A -c "select 1 from pg_database where datname = '$TargetDbSql';"
         if ($exists.Trim() -ne "1") {
-          & $psql -h $PgHost -p $PgPort -U $PgUser -d postgres -c "create database `"$TargetDb`" encoding 'UTF8';"
+          & $psql -h $PgHost -p $PgPort -U $PgUser -d postgres -c "create database `"$TargetDbIdent`" encoding 'UTF8';"
         }
       }
     }

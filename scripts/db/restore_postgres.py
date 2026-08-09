@@ -168,6 +168,10 @@ def main() -> int:
         pg_user = args.pg_user or conn["user"]
         pg_password = args.pg_password if args.pg_password is not None else conn["password"]
         target_db = args.target_db or (manifest["database"] if manifest else conn["db"])
+        if not isinstance(target_db, str) or not target_db:
+            raise RuntimeError("Target database name must be a non-empty string")
+        target_db_sql = target_db.replace("'", "''")
+        target_db_ident = target_db.replace('"', '""')
 
         bin_dir = resolve_pg_bin_dir(args.pg_bin_dir)
         pg_restore = str(bin_dir / "pg_restore")
@@ -209,8 +213,8 @@ def main() -> int:
         if args.drop_existing:
             step_start(f"Dropping existing connections to '{target_db}' (if any)")
             terminate_sql = (
-                f"select pg_terminate_backend(pid) from pg_stat_activity "
-                f"where datname = '{target_db}' and pid <> pg_backend_pid();"
+                "select pg_terminate_backend(pid) from pg_stat_activity "
+                f"where datname = '{target_db_sql}' and pid <> pg_backend_pid();"
             )
             subprocess.run([psql, "-h", pg_host, "-p", pg_port, "-U", pg_user, "-d", "postgres", "-c", terminate_sql],
                             env=env, capture_output=True, text=True)
@@ -218,7 +222,7 @@ def main() -> int:
             step_start(f"Dropping database '{target_db}' if it exists")
             result = subprocess.run(
                 [psql, "-h", pg_host, "-p", pg_port, "-U", pg_user, "-d", "postgres",
-                 "-c", f'drop database if exists "{target_db}";'],
+                 "-c", f'drop database if exists "{target_db_ident}";'],
                 env=env,
             )
             if result.returncode != 0:
@@ -227,7 +231,7 @@ def main() -> int:
             step_start(f"Creating database '{target_db}'")
             result = subprocess.run(
                 [psql, "-h", pg_host, "-p", pg_port, "-U", pg_user, "-d", "postgres",
-                 "-c", f'create database "{target_db}" encoding \'UTF8\';'],
+                 "-c", f'create database "{target_db_ident}" encoding \'UTF8\';'],
                 env=env,
             )
             if result.returncode != 0:
@@ -236,13 +240,13 @@ def main() -> int:
             step_start(f"Ensuring database '{target_db}' exists")
             result = subprocess.run(
                 [psql, "-h", pg_host, "-p", pg_port, "-U", pg_user, "-d", "postgres",
-                 "-t", "-A", "-c", f"select 1 from pg_database where datname = '{target_db}';"],
+                 "-t", "-A", "-c", f"select 1 from pg_database where datname = '{target_db_sql}';"],
                 env=env, capture_output=True, text=True,
             )
             if result.stdout.strip() != "1":
                 result = subprocess.run(
                     [psql, "-h", pg_host, "-p", pg_port, "-U", pg_user, "-d", "postgres",
-                     "-c", f'create database "{target_db}" encoding \'UTF8\';'],
+                     "-c", f'create database "{target_db_ident}" encoding \'UTF8\';'],
                     env=env,
                 )
                 if result.returncode != 0:
