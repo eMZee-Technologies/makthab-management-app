@@ -50,8 +50,8 @@ export const RESOURCE_CATALOG = [
   },
   {
     key: "fees",
-    label: "Fees",
-    description: "Fee structures, payments, and receipts",
+    label: "Income",
+    description: "Fee structures, payments, contributions, and receipts",
     actions: ["view", "create", "update", "delete"] as const,
   },
   {
@@ -62,7 +62,7 @@ export const RESOURCE_CATALOG = [
   },
   {
     key: "finance",
-    label: "Finance",
+    label: "Expenditure",
     description: "Expenses, staff, and salaries",
     actions: ["view", "create", "update", "delete"] as const,
   },

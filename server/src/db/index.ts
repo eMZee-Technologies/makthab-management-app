@@ -12,6 +12,8 @@ export { attendanceRepository } from "./repositories/attendance.repository";
 export type { Attendance } from "./repositories/attendance.repository";
 export { expenseRepository } from "./repositories/expense.repository";
 export type { Expense } from "./repositories/expense.repository";
+export { contributionRepository } from "./repositories/contribution.repository";
+export type { Contribution } from "./repositories/contribution.repository";
 export { expenseCategoryRepository } from "./repositories/expense-category.repository";
 export type { ExpenseCategory } from "./repositories/expense-category.repository";
 export { staffRepository } from "./repositories/staff.repository";

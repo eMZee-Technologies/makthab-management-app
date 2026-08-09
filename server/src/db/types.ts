@@ -9,6 +9,7 @@ export type {
   Attendance,
   Expense,
   ExpenseCategory,
+  Contribution,
   Staff,
   User,
   SalaryPayment,

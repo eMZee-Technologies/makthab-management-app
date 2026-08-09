@@ -29,6 +29,7 @@ export const AUDIT_ENTITIES = [
   "auth",
   "student",
   "fee",
+  "contribution",
   "attendance",
   "expense",
   "staff",

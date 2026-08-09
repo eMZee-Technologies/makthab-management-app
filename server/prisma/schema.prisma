@@ -118,6 +118,28 @@ model Expense {
   @@index([expenseDate])
 }
 
+// Voluntary contribution / donation receipt (income). Receipt numbers are
+// CON-<dd-mm-yyyy>-<seq> (seq is a global 4-digit serial among CON receipts).
+// Gated by the existing fees resource permissions (fees.view/create/update/delete).
+model Contribution {
+  id              Int      @id @default(autoincrement())
+  amount          Float
+  contributorName String
+  contributorType String // individual | anonymous
+  date            DateTime
+  receiptNo       String   @unique
+  notes           String?
+  whatsappNo      String?
+  pdfPath         String?
+  whatsappSent    Boolean  @default(false)
+  recordedById    Int
+  createdAt       DateTime @default(now())
+
+  recordedBy Staff @relation(fields: [recordedById], references: [id])
+
+  @@index([date])
+}
+
 model Staff {
   id           Int      @id @default(autoincrement())
   fullName     String
@@ -131,12 +153,13 @@ model Staff {
   status       String   @default("active")
   createdAt    DateTime @default(now())
 
-  user            User?
-  salaries        SalaryPayment[]
-  feesCollected   FeePayment[]
-  attendanceMarked Attendance[]
-  expensesApproved Expense[]
-  classesTaught   Class[]
+  user                   User?
+  salaries               SalaryPayment[]
+  feesCollected          FeePayment[]
+  attendanceMarked       Attendance[]
+  expensesApproved       Expense[]
+  contributionsRecorded  Contribution[]
+  classesTaught          Class[]
 }
 
 // Application login account. Every user is linked to a Staff record (the actor
