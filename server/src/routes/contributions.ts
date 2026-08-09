@@ -118,6 +118,13 @@ contributionsRouter.post(
   asyncHandler(async (req, res) => {
     const dto = req.body as typeof contributionCreateSchema._output;
     const contributorName = resolveContributorName(dto.contributorType, dto.contributorName);
+    if (dto.contributorType === "individual" && (!dto.contributorName || !dto.contributorName.trim())) {
+      throw new AppError(
+        400,
+        "validation_error",
+        "contributorName is required when contributorType is individual"
+      );
+    }
     const receiptNo = await nextContributionReceiptNo(dto.date);
 
     const created = await contributionRepository.create({

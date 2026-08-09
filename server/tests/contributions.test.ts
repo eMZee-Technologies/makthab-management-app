@@ -22,6 +22,8 @@ describeApi("contributions", () => {
     });
     expect([200, 201]).toContain(r.status);
     expect(r.body.data.receiptNo).toMatch(/^CON-\d{2}-\d{2}-\d{4}-\d{4}$/);
+    // Date segment must match the contribution date (2026-08-09 → 09-08-2026).
+    expect(r.body.data.receiptNo).toMatch(/^CON-09-08-2026-\d{4}$/);
     expect(r.body.data.pdfPath).toMatch(/^receipts\/.+\.pdf$/);
     contributionId = r.body.data.id;
   });
