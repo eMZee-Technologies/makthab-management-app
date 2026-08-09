@@ -122,12 +122,10 @@ Example: `CON-09-08-2026-0001` where `09-08-2026` is the contribution date and `
 npm run build:shared
 npm run typecheck
 
-# Server Jest — contributions suite if present
+# Server Jest — contributions suite (SQLite schema required)
 cd server
-DATABASE_URL="file:./test.db" npx prisma migrate reset --force
+DATABASE_URL="file:./test.db" npx prisma migrate reset --force --schema=./prisma/sqlite/schema.prisma
 DATABASE_URL="file:./test.db" npx jest contributions --runInBand
-# Fallback if file named differently:
-# DATABASE_URL="file:./test.db" npx jest --testPathPattern=contribution --runInBand
 ```
 
 Also re-run existing `fees`, `finance`, `authorization`, and `reports` suites for regression when time allows.
@@ -136,17 +134,21 @@ Also re-run existing `fees`, `finance`, `authorization`, and `reports` suites fo
 
 ## Verification results
 
-_Polled branch / workspace before Backend/Frontend land (HEAD `0396be4`, no Contribution model, no `*contribution*` files, remote branch not yet published)._
+**Verified against** `e1d625f` (`feat(client): Income/Expenditure…`) on top of `8d70dfb` (`feat(server): Contributions API MVP`), after QA plan commit `98ae7f8`. Date: 2026-08-09.
 
 | Check | Result | Notes |
 | --- | --- | --- |
-| Feature code present | **Pending** | No Prisma `Contribution`, routes, client tabs, or jest file yet. |
-| `npm run build:shared` | **Not run** | Waiting for shared schema / API contract from Backend. |
-| `npm run typecheck` | **Not run** | Same. |
-| Jest `contributions` | **N/A** | No `server/tests/*contribution*` file. |
-| Baseline observation | Info | Reports `ExpenseTab` currently `useState(String(now.getFullYear()))` — must become `'all'` for E3. Fee WhatsApp missing-phone already returns `400` `no_whatsapp_number`. |
-
-_Update this section after Backend/Frontend commits appear on the branch._
+| Feature code present | **Pass** | Prisma `Contribution`, `/api/v1/contributions`, `ContributionForm` + Income tab, Reports Contributions tab, jest suite. |
+| `npm run build:shared` | **Pass** | `@makthab/shared` build succeeded. |
+| `npm run typecheck` | **Pass** | shared + server + client all clean. |
+| Jest `contributions` | **Pass** | 4/4: create CON- regex + PDF; accountant CRUD; Teacher POST 403; WhatsApp missing number → 400 `no_whatsapp_number`. Runtime PDFs: `CON-09-08-2026-0001` / `0002` for `date: 2026-08-09` (UTC date segment + seq OK). |
+| Fees regression (subset) | **Pass** | `POST /fees` receipt; `receiptNo` immutable; Teacher fee writes 403. |
+| Static: Income / Monthly Fees | **Pass** | `nav.fees` / `fees.title` → Income; `fees.monthly` → “Monthly Fees”; Contributions tab + gated create/update/delete. |
+| Static: Reports Contributions | **Pass** | Tab present; sub-tabs default **All** + Year view. |
+| Static: Expense year default | **Pass** | `ExpenseTab` `useState('all')`. |
+| Static: WhatsApp caption | **Pass (code review)** | Caption includes receiptNo, contributorName, type, amount, date. Phone lives on contribution row (`whatsappNo`). UI disables WhatsApp when empty; API returns clear 400. |
+| Manual UI / E2E | **Not run** | No browser pass in this QA run. |
+| Contributions PDF/XLSX export | **Gap** | Reports Contributions views set `buttons={null}` — list only, no download (unlike fee/expense reports). |
 
 ---
 
@@ -154,10 +156,11 @@ _Update this section after Backend/Frontend commits appear on the branch._
 
 | Flag | Severity | Detail |
 | --- | --- | --- |
-| Feature not landed | Blocker | Branch tip matches `main`; Contributions API/UI/schema absent. QA cannot execute automated or product verification until Backend/Frontend push. |
-| Receipt date encoding | Contract | Spec is `dd-mm-yyyy` inside the id (`CON-09-08-2026-0001`). Confirm timezone/UTC handling so “contribution date” ≠ server local midnight shift. |
-| Permissions resource | Confirm | Product says reuse **`fees`** matrix (not a new `contributions` resource). Teacher has no `fees.view` today — A5; call out if UI still shows Income read-only for Teacher. |
-| Expense year default | FE required | Current Reports Expense default is **current year**; ticket requires **All**. |
-| WhatsApp contact field | Open | Fees use `student.whatsappNo`. Contributions may be non-student donors — confirm which entity holds the phone and that W2 still applies. |
-| Route / i18n rename | FE | Nav keys still `nav.fees` / `nav.finance` in baseline; ensure EN+AR strings update to Income / Expenditure without breaking `resource: 'fees' \| 'finance'` guards. |
-| Shared package rebuild | Process | After shared Zod/DTO changes, server needs `npm run build:shared` before jest/typecheck. |
+| Contributions report exports missing | Medium | All/Year list UI ships, but no PDF/Excel download wiring or `report` schema entry for contributions. Confirm if MVP intentionally omits exports. |
+| Jest coverage gaps | Low | Suite does not assert date-segment equality, seq increment, Teacher PATCH/DELETE/WhatsApp 403, or WhatsApp caption body. Runtime logs already showed correct `CON-09-08-2026-*` seq. |
+| Teacher view of Income | Info | Teacher still has no `fees.view` → Income nav hidden + list 403 (A5). Matches attendance-only matrix; not a bug unless product wanted read-only. |
+| WhatsApp phone on contribution | Resolved | Optional `whatsappNo` on the contribution DTO/row (not student lookup). Missing → `400` `no_whatsapp_number`. |
+| Receipt date UTC | Resolved | `nextContributionReceiptNo` uses `getUTC*` so ISO date-only strings do not shift calendar day. |
+| Expense year default All | Resolved | FE landed `'all'` default. |
+| i18n / resource keys | Resolved | Labels Income/Expenditure (EN+AR); guards still `fees` / `finance`. |
+| SQLite migrate for tests | Process | Default `prisma/schema.prisma` is PostgreSQL — use `--schema=./prisma/sqlite/schema.prisma` (or `npm run db:reset -w server`) with `DATABASE_URL="file:./test.db"`. |
