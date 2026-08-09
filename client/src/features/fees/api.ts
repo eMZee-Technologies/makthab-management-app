@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/api/client';
 import { downloadFile } from '@/lib/download';
-import type { FeePayment, Defaulter, FeeStructure } from '@/types/domain';
-import type { FeePaymentCreateInput, FeeStructureCreateInput } from '@/lib/schemas';
+import type { FeePayment, Defaulter, FeeStructure, Contribution } from '@/types/domain';
+import type { FeePaymentCreateInput, FeeStructureCreateInput, ContributionCreateInput } from '@/lib/schemas';
 
 export interface FeeListParams {
   student_id?: number;
@@ -157,5 +157,81 @@ export function useSendReceiptWhatsApp() {
         (await api.post(`/fees/${feeId}/whatsapp`)).data,
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['fees'] }),
+  });
+}
+
+export interface ContributionListParams {
+  year?: number;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export function useContributions(params: ContributionListParams = {}) {
+  return useQuery({
+    queryKey: ['contributions', params],
+    queryFn: async () => {
+      const payload = unwrap((await api.get('/contributions', { params })).data) as {
+        items?: Contribution[];
+        total?: number;
+        totalAmount?: number;
+      };
+      return {
+        items: payload.items ?? [],
+        total: payload.total ?? payload.items?.length ?? 0,
+        totalAmount: payload.totalAmount ?? 0,
+      };
+    },
+  });
+}
+
+export function useCreateContribution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: ContributionCreateInput) =>
+      unwrap<Contribution>((await api.post('/contributions', input)).data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contributions'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+export function useUpdateContribution(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: Partial<ContributionCreateInput>) =>
+      unwrap<Contribution>((await api.patch(`/contributions/${id}`, input)).data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contributions'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+export function useDeleteContribution() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => (await api.delete(`/contributions/${id}`)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contributions'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+export function downloadContributionReceipt(c: Contribution) {
+  return downloadFile(`/contributions/${c.id}/receipt`, `contribution-${c.receiptNo}.pdf`);
+}
+
+export function useSendContributionWhatsApp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) =>
+      unwrap<{ mode: 'walink'; link: string; whatsappSent: boolean } | { mode: 'business-api'; whatsappSent: boolean }>(
+        (await api.post(`/contributions/${id}/whatsapp`)).data,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['contributions'] }),
   });
 }
