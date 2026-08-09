@@ -104,14 +104,18 @@ Example: `CON-09-08-2026-0001` where `09-08-2026` is the contribution date and `
 
 ## Manual checklist (quick pass)
 
-- [ ] Admin: Income → Contributions CRUD + receipt + WhatsApp  
-- [ ] Accountant: same  
-- [ ] Teacher: no Income write UI; API 403 on mutations  
-- [ ] Receipt `CON-dd-mm-yyyy-####` with date + seq  
-- [ ] Reports → Contributions default All + Year view  
-- [ ] Reports → Expense year default All  
-- [ ] Nav: Income + Expenditure labels  
-- [ ] Fees still MF-/ADM-; expenses still EXP-
+Automated / static coverage is noted below; **remaining browser checks** are still open:
+
+- [ ] Admin: Income → Contributions CRUD + receipt + WhatsApp (browser)
+- [ ] Accountant: same (browser)
+- [ ] Teacher: Income nav hidden; no Contributions write UI (browser) — API Teacher create 403 covered by Jest
+- [x] Receipt `CON-dd-mm-yyyy-####` with date + seq — Jest + observed `CON-09-08-2026-0001`
+- [x] Reports → Contributions default All + Year view — static code review
+- [x] Reports → Expense year default All — static code review
+- [x] Nav: Income + Expenditure labels — static i18n review
+- [ ] Fees still MF-/ADM-; expenses still EXP- — partial (fees Jest subset); full EXP smoke not run in browser
+- [ ] WhatsApp prefill text readable in wa.me (browser)
+- [ ] Anonymous vs individual create/edit UX (browser)
 
 ---
 
@@ -126,6 +130,8 @@ npm run typecheck
 cd server
 DATABASE_URL="file:./test.db" npx prisma migrate reset --force --schema=./prisma/sqlite/schema.prisma
 DATABASE_URL="file:./test.db" npx jest contributions --runInBand
+# Coordinator-equivalent one-liner also OK once DB already migrated/seeded:
+# DATABASE_URL="file:./test.db" npx jest tests/contributions.test.ts --runInBand
 ```
 
 Also re-run existing `fees`, `finance`, `authorization`, and `reports` suites for regression when time allows.
@@ -134,21 +140,27 @@ Also re-run existing `fees`, `finance`, `authorization`, and `reports` suites fo
 
 ## Verification results
 
-**Verified against** `e1d625f` (`feat(client): Income/Expenditure…`) on top of `8d70dfb` (`feat(server): Contributions API MVP`), after QA plan commit `98ae7f8`. Date: 2026-08-09.
+**Branch tip reviewed:** `e1d625f` (FE) + `8d70dfb` (BE), QA docs through `624877f`. Date: 2026-08-09.
+
+**Coordinator confirmation (re-recorded here):**
 
 | Check | Result | Notes |
 | --- | --- | --- |
-| Feature code present | **Pass** | Prisma `Contribution`, `/api/v1/contributions`, `ContributionForm` + Income tab, Reports Contributions tab, jest suite. |
-| `npm run build:shared` | **Pass** | `@makthab/shared` build succeeded. |
-| `npm run typecheck` | **Pass** | shared + server + client all clean. |
-| Jest `contributions` | **Pass** | 4/4: create CON- regex + PDF; accountant CRUD; Teacher POST 403; WhatsApp missing number → 400 `no_whatsapp_number`. Runtime PDFs: `CON-09-08-2026-0001` / `0002` for `date: 2026-08-09` (UTC date segment + seq OK). |
+| `npm run typecheck` | **Pass** | shared / server / client green. |
+| Jest `tests/contributions.test.ts` | **Pass** | 4/4 with `DATABASE_URL=file:./test.db`: CON receipt format, accountant CRUD, Teacher create → 403, WhatsApp without number → 400. |
+| Receipt example | **Pass** | Observed `CON-09-08-2026-0001` for contribution date `2026-08-09`. |
+
+**Additional QA agent runs / static skim:**
+
+| Check | Result | Notes |
+| --- | --- | --- |
+| `npm run build:shared` | **Pass** | Ran successfully before typecheck/jest. |
 | Fees regression (subset) | **Pass** | `POST /fees` receipt; `receiptNo` immutable; Teacher fee writes 403. |
-| Static: Income / Monthly Fees | **Pass** | `nav.fees` / `fees.title` → Income; `fees.monthly` → “Monthly Fees”; Contributions tab + gated create/update/delete. |
-| Static: Reports Contributions | **Pass** | Tab present; sub-tabs default **All** + Year view. |
-| Static: Expense year default | **Pass** | `ExpenseTab` `useState('all')`. |
-| Static: WhatsApp caption | **Pass (code review)** | Caption includes receiptNo, contributorName, type, amount, date. Phone lives on contribution row (`whatsappNo`). UI disables WhatsApp when empty; API returns clear 400. |
-| Manual UI / E2E | **Not run** | No browser pass in this QA run. |
-| Contributions PDF/XLSX export | **Gap** | Reports Contributions views set `buttons={null}` — list only, no download (unlike fee/expense reports). |
+| Income page Contributions tab (code skim) | **Pass w/ notes** | Tab + year filter (All default), Add/Edit/Delete gated by `fees` create/update/delete; receipt download always; WhatsApp gated by update. See Coordination flags. |
+| Reports Contributions tab (code skim) | **Pass w/ notes** | Tab present; sub-tabs default **All** + Year (year = filtered list). No PDF/XLSX buttons. |
+| Expense year default | **Pass** | `ExpenseTab` defaults to `'all'`. |
+| WhatsApp caption (API) | **Pass (code review)** | Includes receiptNo, contributorName, type, amount, date. Phone on contribution row. Missing → 400 `no_whatsapp_number` (Jest). |
+| Manual UI / E2E browser | **Not run** | Checklist items above still need a human/browser pass. |
 
 ---
 
@@ -156,11 +168,14 @@ Also re-run existing `fees`, `finance`, `authorization`, and `reports` suites fo
 
 | Flag | Severity | Detail |
 | --- | --- | --- |
-| Contributions report exports missing | Medium | All/Year list UI ships, but no PDF/Excel download wiring or `report` schema entry for contributions. Confirm if MVP intentionally omits exports. |
-| Jest coverage gaps | Low | Suite does not assert date-segment equality, seq increment, Teacher PATCH/DELETE/WhatsApp 403, or WhatsApp caption body. Runtime logs already showed correct `CON-09-08-2026-*` seq. |
-| Teacher view of Income | Info | Teacher still has no `fees.view` → Income nav hidden + list 403 (A5). Matches attendance-only matrix; not a bug unless product wanted read-only. |
-| WhatsApp phone on contribution | Resolved | Optional `whatsappNo` on the contribution DTO/row (not student lookup). Missing → `400` `no_whatsapp_number`. |
-| Receipt date UTC | Resolved | `nextContributionReceiptNo` uses `getUTC*` so ISO date-only strings do not shift calendar day. |
-| Expense year default All | Resolved | FE landed `'all'` default. |
-| i18n / resource keys | Resolved | Labels Income/Expenditure (EN+AR); guards still `fees` / `finance`. |
-| SQLite migrate for tests | Process | Default `prisma/schema.prisma` is PostgreSQL — use `--schema=./prisma/sqlite/schema.prisma` (or `npm run db:reset -w server`) with `DATABASE_URL="file:./test.db"`. |
+| Contributions report exports missing | Medium | Reports Contributions All/Year set `buttons={null}` — on-screen list only; no PDF/Excel (and no shared `report` type for contributions). Confirm intentional for MVP (RC3 “if provided”). |
+| Reports Year view is list-only | Low | Unlike Monthly Fees Year summary, Contributions “Year” is a year-filtered detail table, not an aggregate-by-year summary. Acceptable if product only needed a year filter. |
+| WhatsApp UI without phone | Low | Contributions WhatsApp action stays clickable when `whatsappNo` is empty (same pattern as fee rows); click → API 400 → toast. Not a blank wa.me link, but no proactive disable/hide. |
+| Jest coverage gaps | Low | Committed suite covers create regex + CRUD + Teacher create 403 + missing WhatsApp. Still light on explicit seq-increment, Teacher PATCH/DELETE/WhatsApp 403, and caption body asserts. |
+| Teacher view of Income | Info | Teacher has no `fees.view` → Income nav hidden + reads 403 (A5). Matches attendance-only matrix. |
+| Remaining manual UI | Info | Browser not exercised: Admin/Accountant CRUD+WhatsApp flow, Teacher UI hide, wa.me prefill readability, anonymous/individual form UX, EXP voucher smoke. |
+| WhatsApp phone on contribution | Resolved | Optional `whatsappNo` on the contribution itself (not student lookup). |
+| Receipt date UTC | Resolved | `getUTC*` used; observed `CON-09-08-2026-0001` for `2026-08-09`. |
+| Expense year default All | Resolved | FE landed `'all'`. |
+| i18n / resource keys | Resolved | Income / Expenditure labels (EN+AR); guards still `fees` / `finance`. |
+| SQLite migrate for tests | Process | Use `--schema=./prisma/sqlite/schema.prisma` (or `npm run db:reset -w server`) with `DATABASE_URL="file:./test.db"`. |
