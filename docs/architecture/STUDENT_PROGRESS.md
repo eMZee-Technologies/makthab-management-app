@@ -80,6 +80,19 @@ Base: `/api/v1/progress` — auth + `progress` resource guards.
 - Seeded **Teacher** gains `progress.manage` (plus existing attendance).
 - **Admin** already `mode: "all"`. Accountant unchanged (no progress).
 
+## Reports tab (Admin / Accountant)
+
+The Reports page includes a **Student Progress** tab (next to Attendance Summary):
+
+- On-screen paginated table: Admission No., Name, Class, Category, Month, plus progress metrics
+- Filters: year (required), month (optional = all months), class, category
+- Sorting on identity / month / hours / present days / progress %
+- Narrow viewports: expand row for secondary fields
+- Downloads: PDF (compact columns) and Excel (full field set) via
+  `GET /api/v1/reports/student-progress` (+ `/summary` for JSON)
+
+Gated by `reports.view` (not Teacher’s `progress` resource). Teachers capture data on `/progress`; management exports from Reports.
+
 ## Implementation steps
 
 1. Prisma `MonthlyProgress` + PG/SQLite migrations; regenerate sqlite schema.
@@ -87,4 +100,5 @@ Base: `/api/v1/progress` — auth + `progress` resource guards.
 3. Repository, routes, upload helpers, audit on mutate/WhatsApp.
 4. Seed Teacher permissions; build shared.
 5. Client: schemas, types, api hooks, page/form/WhatsApp, nav + i18n.
-6. Jest integration tests; typecheck.
+6. Reports tab: summary JSON + PDF/Excel downloads; filters and responsive table.
+7. Jest integration tests; typecheck.

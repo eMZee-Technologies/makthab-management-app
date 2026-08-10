@@ -42,9 +42,47 @@ export function parseAttachments(raw: string | null | undefined): ProgressAttach
 }
 
 const studentInclude = {
-  student: { include: { class: true } },
+  student: { include: { class: true, category: true } },
   editedBy: { select: { id: true, fullName: true, role: true } },
 } as const;
+
+function buildListWhere(q: {
+  studentId?: number;
+  classId?: number;
+  categoryId?: number;
+  month?: number;
+  year?: number;
+  q?: string;
+}): Prisma.MonthlyProgressWhereInput {
+  const studentFilter: Prisma.StudentWhereInput = {
+    ...(q.classId ? { classId: q.classId } : {}),
+    ...(q.categoryId ? { categoryId: q.categoryId } : {}),
+    ...(q.q
+      ? {
+          OR: [{ fullName: { contains: q.q } }, { admissionNo: { contains: q.q } }],
+        }
+      : {}),
+  };
+  const hasStudentFilter = Boolean(q.classId || q.categoryId || q.q);
+  return {
+    ...(q.studentId ? { studentId: q.studentId } : {}),
+    ...(q.month ? { month: q.month } : {}),
+    ...(q.year ? { year: q.year } : {}),
+    ...(hasStudentFilter ? { student: studentFilter } : {}),
+  };
+}
+
+function buildOrderBy(
+  sortBy?: string,
+  sortOrder: "asc" | "desc" = "asc"
+): Prisma.MonthlyProgressOrderByWithRelationInput | Prisma.MonthlyProgressOrderByWithRelationInput[] {
+  if (sortBy === "fullName") return { student: { fullName: sortOrder } };
+  if (sortBy === "admissionNo") return { student: { admissionNo: sortOrder } };
+  if (sortBy) {
+    return { [sortBy]: sortOrder } as Prisma.MonthlyProgressOrderByWithRelationInput;
+  }
+  return [{ year: "asc" }, { month: "asc" }, { student: { fullName: "asc" } }];
+}
 
 export const monthlyProgressRepository = {
   findById(id: number) {
@@ -88,6 +126,7 @@ export const monthlyProgressRepository = {
   async list(q: {
     studentId?: number;
     classId?: number;
+    categoryId?: number;
     month?: number;
     year?: number;
     q?: string;
@@ -96,33 +135,8 @@ export const monthlyProgressRepository = {
     page: number;
     limit: number;
   }) {
-    const where: Prisma.MonthlyProgressWhereInput = {
-      ...(q.studentId ? { studentId: q.studentId } : {}),
-      ...(q.month ? { month: q.month } : {}),
-      ...(q.year ? { year: q.year } : {}),
-      ...(q.classId || q.q
-        ? {
-            student: {
-              ...(q.classId ? { classId: q.classId } : {}),
-              ...(q.q
-                ? {
-                    OR: [
-                      { fullName: { contains: q.q } },
-                      { admissionNo: { contains: q.q } },
-                    ],
-                  }
-                : {}),
-            },
-          }
-        : {}),
-    };
-
-    const orderBy: Prisma.MonthlyProgressOrderByWithRelationInput =
-      q.sortBy === "fullName"
-        ? { student: { fullName: q.sortOrder ?? "asc" } }
-        : q.sortBy
-          ? ({ [q.sortBy]: q.sortOrder ?? "asc" } as Prisma.MonthlyProgressOrderByWithRelationInput)
-          : { updatedAt: "desc" };
+    const where = buildListWhere(q);
+    const orderBy = buildOrderBy(q.sortBy, q.sortOrder ?? "asc");
 
     const [items, total] = await Promise.all([
       prisma.monthlyProgress.findMany({
@@ -135,6 +149,23 @@ export const monthlyProgressRepository = {
       prisma.monthlyProgress.count({ where }),
     ]);
     return { items, total };
+  },
+
+  /** Unpaginated list for PDF/XLSX exports (cap at 5000). */
+  async findForReport(q: {
+    classId?: number;
+    categoryId?: number;
+    month?: number;
+    year?: number;
+    sortBy?: string;
+    sortOrder?: "asc" | "desc";
+  }) {
+    return prisma.monthlyProgress.findMany({
+      where: buildListWhere(q),
+      include: studentInclude,
+      orderBy: buildOrderBy(q.sortBy, q.sortOrder ?? "asc"),
+      take: 5000,
+    });
   },
 
   /** Active students for a board period, left-joined with that month's progress. */
@@ -163,7 +194,7 @@ export const monthlyProgressRepository = {
     const [students, total] = await Promise.all([
       prisma.student.findMany({
         where: studentWhere,
-        include: { class: true },
+        include: { class: true, category: true },
         orderBy: { fullName: q.sortOrder ?? "asc" },
         skip: (q.page - 1) * q.limit,
         take: q.limit,

@@ -1,6 +1,6 @@
 import type { Response } from "express";
 import { Router } from "express";
-import { feePaymentRepository, salaryPaymentRepository, expenseRepository, studentRepository, attendanceRepository, contributionRepository } from "../db";
+import { feePaymentRepository, salaryPaymentRepository, expenseRepository, studentRepository, attendanceRepository, contributionRepository, monthlyProgressRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAuth, requireResourcePermission } from "../middleware/auth";
 import { validateQuery } from "../middleware/validate";
@@ -12,9 +12,12 @@ import {
   feeCollectionSummaryQuery,
   salaryRegisterSummaryQuery,
   financialSummaryQuery,
+  studentProgressReportQuery,
   type FeeCollectionSummaryQuery,
   type SalaryRegisterSummaryQuery,
   type FinancialSummaryQuery,
+  type StudentProgressReportQuery,
+  type StudentProgressReportRow,
   type MonthlyFeeBreakdownRow,
   type YearlyFeeBreakdownRow,
   type MonthlySalaryBreakdownRow,
@@ -650,6 +653,215 @@ reportsRouter.get(
       },
       false,
       `Financial-Summary-${year}`
+    );
+  })
+);
+
+function toProgressReportRow(p: {
+  id: number;
+  studentId: number;
+  month: number;
+  year: number;
+  hoursStudied: number;
+  topicsCovered: string;
+  assessments: string;
+  attendanceDays: number;
+  moodEngagement: string;
+  goals: string;
+  notes: string;
+  previousMonthComparison: string | null;
+  progressPercent: number | null;
+  assignmentsCompleted: string | null;
+  softSkills: string | null;
+  reminders: string | null;
+  nextSteps: string | null;
+  updatedAt: Date;
+  student?: {
+    admissionNo?: string;
+    fullName?: string;
+    class?: { name: string } | null;
+    category?: { name: string } | null;
+  } | null;
+}): StudentProgressReportRow {
+  return {
+    id: p.id,
+    studentId: p.studentId,
+    admissionNo: p.student?.admissionNo ?? "-",
+    fullName: p.student?.fullName ?? "-",
+    className: p.student?.class?.name ?? null,
+    categoryName: p.student?.category?.name ?? null,
+    month: p.month,
+    year: p.year,
+    hoursStudied: p.hoursStudied,
+    topicsCovered: p.topicsCovered,
+    assessments: p.assessments,
+    attendanceDays: p.attendanceDays,
+    moodEngagement: p.moodEngagement,
+    goals: p.goals,
+    notes: p.notes,
+    previousMonthComparison: p.previousMonthComparison,
+    progressPercent: p.progressPercent,
+    assignmentsCompleted: p.assignmentsCompleted,
+    softSkills: p.softSkills,
+    reminders: p.reminders,
+    nextSteps: p.nextSteps,
+    updatedAt: p.updatedAt.toISOString(),
+  };
+}
+
+function progressReportSubtitle(q: StudentProgressReportQuery): string {
+  const parts = [
+    q.month ? `${MONTH_NAMES[q.month - 1]} ${q.year}` : String(q.year),
+    q.class_id ? `class ${q.class_id}` : null,
+    q.category_id ? `category ${q.category_id}` : null,
+  ].filter(Boolean);
+  return parts.join(" — ");
+}
+
+function progressFilenameStem(q: StudentProgressReportQuery): string {
+  const period = q.month
+    ? `${MONTH_NAMES[q.month - 1] ?? q.month}-${q.year}`
+    : String(q.year);
+  return `Student-Progress-${period}`;
+}
+
+// GET /reports/student-progress/summary — JSON for on-screen Reports tab table.
+// Registered before /student-progress so path matching is unambiguous.
+reportsRouter.get(
+  "/student-progress/summary",
+  validateQuery(studentProgressReportQuery),
+  asyncHandler(async (_req, res) => {
+    const q = res.locals.query as StudentProgressReportQuery;
+    const { items, total } = await monthlyProgressRepository.list({
+      year: q.year,
+      month: q.month,
+      classId: q.class_id,
+      categoryId: q.category_id,
+      sortBy: q.sortBy,
+      sortOrder: q.sortOrder,
+      page: q.page,
+      limit: q.limit,
+    });
+    res.json({
+      data: {
+        items: items.map(toProgressReportRow),
+        total,
+        page: q.page,
+        limit: q.limit,
+      },
+    });
+  })
+);
+
+// GET /reports/student-progress?year&month&class_id&category_id&format
+// PDF uses a compact column set; XLSX includes the full progress field set.
+reportsRouter.get(
+  "/student-progress",
+  validateQuery(studentProgressReportQuery),
+  asyncHandler(async (req, res) => {
+    const q = res.locals.query as StudentProgressReportQuery;
+    const rows = await monthlyProgressRepository.findForReport({
+      year: q.year,
+      month: q.month,
+      classId: q.class_id,
+      categoryId: q.category_id,
+      sortBy: q.sortBy,
+      sortOrder: q.sortOrder,
+    });
+    const mapped = rows.map(toProgressReportRow);
+    const wantXlsx = String(req.query.format).toLowerCase() === "xlsx";
+    const subtitle = progressReportSubtitle(q);
+
+    if (wantXlsx) {
+      await send(
+        res,
+        "xlsx",
+        {
+          title: "Student Progress Report",
+          subtitle,
+          headers: [
+            "Admission No.",
+            "Student Name",
+            "Class",
+            "Category",
+            "Month",
+            "Year",
+            "Hours Studied",
+            "Topics / Portion",
+            "Assessments",
+            "Present Days",
+            "Mood / Engagement",
+            "Goals",
+            "Notes",
+            "Progress %",
+            "Assignments",
+            "Soft Skills",
+            "Previous Month",
+            "Reminders",
+            "Next Steps",
+          ],
+          rows: mapped.map((r) => [
+            r.admissionNo,
+            r.fullName,
+            r.className ?? "-",
+            r.categoryName ?? "-",
+            MONTH_NAMES[r.month - 1] ?? r.month,
+            r.year,
+            r.hoursStudied,
+            r.topicsCovered,
+            r.assessments,
+            r.attendanceDays,
+            r.moodEngagement.replace(/_/g, " "),
+            r.goals,
+            r.notes,
+            r.progressPercent ?? "",
+            r.assignmentsCompleted ?? "",
+            r.softSkills ?? "",
+            r.previousMonthComparison ?? "",
+            r.reminders ?? "",
+            r.nextSteps ?? "",
+          ]),
+        },
+        false,
+        progressFilenameStem(q)
+      );
+      return;
+    }
+
+    await send(
+      res,
+      req.query.format,
+      {
+        title: "Student Progress Report",
+        subtitle,
+        headers: [
+          "Adm No.",
+          "Student",
+          "Class",
+          "Category",
+          "Month",
+          "Hours",
+          "Portion",
+          "Present",
+          "Mood",
+          "Progress %",
+        ],
+        rows: mapped.map((r) => [
+          r.admissionNo,
+          r.fullName,
+          r.className ?? "-",
+          r.categoryName ?? "-",
+          `${MONTH_ABBR[r.month - 1] ?? r.month} ${r.year}`,
+          r.hoursStudied,
+          r.topicsCovered,
+          r.attendanceDays,
+          r.moodEngagement.replace(/_/g, " "),
+          r.progressPercent ?? "",
+        ]),
+        summaryLines: [["Total rows", String(mapped.length)]],
+      },
+      false,
+      progressFilenameStem(q)
     );
   })
 );
