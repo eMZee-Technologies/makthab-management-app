@@ -16,6 +16,7 @@ import {
   paymentMethodSchema,
   attendanceStatusSchema,
   studentStatusSchema,
+  contributorTypeSchema,
 } from '@makthab/shared';
 
 const requiredDate = z.string().min(1, 'Required');
@@ -179,3 +180,17 @@ export const salaryPaymentCreateSchema = z.object({
   paymentDate: requiredDate,
 });
 export type SalaryPaymentCreateInput = z.infer<typeof salaryPaymentCreateSchema>;
+
+/** Form coercion for contributions — reuses shared contributorTypeSchema. */
+export const contributionCreateSchema = z.object({
+  amount: z.coerce.number().positive('Enter a valid amount'),
+  contributorName: z.string().trim().min(1, 'Required'),
+  contributorType: contributorTypeSchema,
+  date: requiredDate,
+  notes: z.preprocess((v) => (v === '' || v == null ? undefined : v), z.string().trim().optional()),
+  whatsappNo: z.preprocess(
+    (v) => (v === '' || v == null ? undefined : v),
+    z.string().trim().min(7, 'Enter a valid number').optional(),
+  ),
+});
+export type ContributionCreateInput = z.infer<typeof contributionCreateSchema>;

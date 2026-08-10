@@ -6,6 +6,7 @@ export * from "./schemas/auth";
 export * from "./schemas/student";
 export * from "./schemas/class";
 export * from "./schemas/fee";
+export * from "./schemas/contribution";
 export * from "./schemas/attendance";
 export * from "./schemas/finance";
 export * from "./schemas/report";

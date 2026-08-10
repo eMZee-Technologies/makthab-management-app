@@ -13,9 +13,9 @@ import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, formatNumber, formatDate, monthName } from '@/lib/format';
 import { downloadFile } from '@/lib/download';
 import { extractApiError } from '@/api/client';
-import { useFees, useDefaulters } from '@/features/fees/api';
+import { useFees, useDefaulters, useContributions } from '@/features/fees/api';
 import { useExpenses, useSalaries } from '@/features/finance/api';
-import type { FeePayment, Expense, SalaryPayment, Defaulter } from '@/types/domain';
+import type { FeePayment, Expense, SalaryPayment, Defaulter, Contribution } from '@/types/domain';
 import {
   useFeeCollectionYearSummary,
   useFeeCollectionAllSummary,
@@ -382,6 +382,111 @@ function AdmissionFeesTab() {
   );
 }
 
+/** Read-only, paginated contribution list for reports. */
+function ReportContributionsTable({ year }: { year?: number }) {
+  const { t, i18n } = useTranslation();
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [year]);
+
+  const { data, isLoading, isError, refetch } = useContributions({ year, page, limit });
+
+  return (
+    <>
+      {isLoading ? (
+        <LoadingRows cols={6} />
+      ) : isError ? (
+        <ErrorState onRetry={refetch} />
+      ) : !data || data.items.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('fees.receiptNo')}</TableHead>
+              <TableHead>{t('fees.contributorName')}</TableHead>
+              <TableHead>{t('fees.contributorType')}</TableHead>
+              <TableHead className="text-end">{t('fees.contributionAmount')}</TableHead>
+              <TableHead>{t('fees.contributionDate')}</TableHead>
+              <TableHead>{t('fees.contributionNotes')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.items.map((c: Contribution) => (
+              <TableRow key={c.id}>
+                <TableCell className="font-medium">{c.receiptNo}</TableCell>
+                <TableCell>{c.contributorName}</TableCell>
+                <TableCell>
+                  {c.contributorType === 'anonymous'
+                    ? t('fees.contributorAnonymous')
+                    : t('fees.contributorIndividual')}
+                </TableCell>
+                <TableCell className="text-end">{formatCurrency(c.amount, i18n.language)}</TableCell>
+                <TableCell>{formatDate(c.date, i18n.language)}</TableCell>
+                <TableCell className="max-w-[12rem] truncate">{c.notes ?? '-'}</TableCell>
+              </TableRow>
+            ))}
+            <TableRow className="font-semibold">
+              <TableCell colSpan={3}>{t('common.total')}</TableCell>
+              <TableCell className="text-end">{formatCurrency(data.totalAmount, i18n.language)}</TableCell>
+              <TableCell colSpan={2} />
+            </TableRow>
+          </TableBody>
+        </Table>
+      )}
+      {data && data.total > 0 && (
+        <Pagination
+          page={page}
+          limit={limit}
+          total={data.total}
+          onPageChange={setPage}
+          onLimitChange={(l) => {
+            setLimit(l);
+            setPage(1);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function ContributionsAllView() {
+  return (
+    <ReportTabCard filters={null} buttons={null}>
+      <ReportContributionsTable />
+    </ReportTabCard>
+  );
+}
+
+function ContributionsYearView() {
+  const [year, setYear] = useState(now.getFullYear());
+  return (
+    <ReportTabCard
+      filters={<YearSelect year={year} onYear={setYear} />}
+      buttons={null}
+    >
+      <ReportContributionsTable year={year} />
+    </ReportTabCard>
+  );
+}
+
+function ContributionsTab() {
+  const { t } = useTranslation();
+  return (
+    <Tabs defaultValue="all">
+      <TabsList>
+        <TabsTrigger value="all">{t('reports.viewAll')}</TabsTrigger>
+        <TabsTrigger value="year">{t('reports.viewYear')}</TabsTrigger>
+      </TabsList>
+      <TabsContent value="all"><ContributionsAllView /></TabsContent>
+      <TabsContent value="year"><ContributionsYearView /></TabsContent>
+    </Tabs>
+  );
+}
+
 /** Read-only, paginated expense list for a single year (or all years). */
 function ReportExpensesTable({ dateFrom, dateTo }: { dateFrom?: string; dateTo?: string }) {
   const { t, i18n } = useTranslation();
@@ -449,7 +554,7 @@ function ReportExpensesTable({ dateFrom, dateTo }: { dateFrom?: string; dateTo?:
 
 function ExpenseTab() {
   const { t } = useTranslation();
-  const [year, setYear] = useState<string>(String(now.getFullYear()));
+  const [year, setYear] = useState<string>('all');
   const download = useReportDownload();
   const years = [now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2, now.getFullYear() - 3];
   const isAll = year === 'all';
@@ -737,6 +842,10 @@ function FinancialSummaryYearView() {
               <TableCell className="text-end">{formatCurrency(data.admissionFee, i18n.language)}</TableCell>
             </TableRow>
             <TableRow>
+              <TableCell className="font-medium">{t('reports.contributions')}</TableCell>
+              <TableCell className="text-end">{formatCurrency(data.contributions, i18n.language)}</TableCell>
+            </TableRow>
+            <TableRow>
               <TableCell className="font-medium">{t('nav.expenses')}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.expenses, i18n.language)}</TableCell>
             </TableRow>
@@ -771,7 +880,7 @@ function FinancialSummaryAllView() {
       }
     >
       {isLoading ? (
-        <LoadingRows cols={6} />
+        <LoadingRows cols={7} />
       ) : isError ? (
         <ErrorState onRetry={refetch} />
       ) : !data || data.years.length === 0 ? (
@@ -783,6 +892,7 @@ function FinancialSummaryAllView() {
               <TableHead>{t('reports.year')}</TableHead>
               <TableHead className="text-end">{t('reports.monthlyFee')}</TableHead>
               <TableHead className="text-end">{t('reports.admissionFee')}</TableHead>
+              <TableHead className="text-end">{t('reports.contributions')}</TableHead>
               <TableHead className="text-end">{t('nav.expenses')}</TableHead>
               <TableHead className="text-end">{t('nav.salaries')}</TableHead>
               <TableHead className="text-end">{t('reports.netBalance')}</TableHead>
@@ -794,6 +904,7 @@ function FinancialSummaryAllView() {
                 <TableCell className="font-medium">{y.year}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.monthlyFee, i18n.language)}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.admissionFee, i18n.language)}</TableCell>
+                <TableCell className="text-end">{formatCurrency(y.contributions, i18n.language)}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.expenses, i18n.language)}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.salaries, i18n.language)}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.netBalance, i18n.language)}</TableCell>
@@ -803,6 +914,7 @@ function FinancialSummaryAllView() {
               <TableCell>{t('common.total')}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.monthlyFee, i18n.language)}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.admissionFee, i18n.language)}</TableCell>
+              <TableCell className="text-end">{formatCurrency(data.totals.contributions, i18n.language)}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.expenses, i18n.language)}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.salaries, i18n.language)}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.netBalance, i18n.language)}</TableCell>
@@ -923,6 +1035,7 @@ export function ReportsPage() {
         <TabsList>
           <TabsTrigger value="monthlyFees">{t('reports.monthlyFees')}</TabsTrigger>
           <TabsTrigger value="admissionFees">{t('reports.admissionFees')}</TabsTrigger>
+          <TabsTrigger value="contributions">{t('reports.contributions')}</TabsTrigger>
           <TabsTrigger value="expense">{t('reports.expense')}</TabsTrigger>
           <TabsTrigger value="salaries">{t('reports.salaries')}</TabsTrigger>
           <TabsTrigger value="financialSummary">{t('reports.financialSummary')}</TabsTrigger>
@@ -931,6 +1044,7 @@ export function ReportsPage() {
         </TabsList>
         <TabsContent value="monthlyFees"><MonthlyFeesTab /></TabsContent>
         <TabsContent value="admissionFees"><AdmissionFeesTab /></TabsContent>
+        <TabsContent value="contributions"><ContributionsTab /></TabsContent>
         <TabsContent value="expense"><ExpenseTab /></TabsContent>
         <TabsContent value="salaries"><SalariesTab /></TabsContent>
         <TabsContent value="financialSummary"><FinancialSummaryTab /></TabsContent>

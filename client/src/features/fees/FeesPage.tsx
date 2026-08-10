@@ -38,10 +38,15 @@ import {
   useDeleteFee,
   useSendReceiptWhatsApp,
   downloadReceipt,
+  useContributions,
+  useDeleteContribution,
+  useSendContributionWhatsApp,
+  downloadContributionReceipt,
 } from './api';
 import { FeeForm } from './FeeForm';
+import { ContributionForm } from './ContributionForm';
 import { FeeStructures } from './FeeStructures';
-import type { FeePayment, Defaulter } from '@/types/domain';
+import type { FeePayment, Defaulter, Contribution } from '@/types/domain';
 
 const now = new Date();
 
@@ -110,10 +115,12 @@ function PaymentsTable({
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const can = useCan();
+  const canCreate = can('fees', 'create');
   const canUpdate = can('fees', 'update');
   const canDelete = can('fees', 'delete');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<FeePayment | null>(null);
   const [deleting, setDeleting] = useState<FeePayment | null>(null);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
@@ -177,16 +184,24 @@ function PaymentsTable({
   return (
     <Card>
       <CardContent className="space-y-4 pt-6">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           {filters}
-          {data && (
-            <div className="text-sm text-muted-foreground">
-              {t('common.total')}:{' '}
-              <span className="font-semibold text-foreground">
-                {formatCurrency(data.totalPaid, i18n.language)}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {data && (
+              <div className="text-sm text-muted-foreground">
+                {t('common.total')}:{' '}
+                <span className="font-semibold text-foreground">
+                  {formatCurrency(data.totalPaid, i18n.language)}
+                </span>
+              </div>
+            )}
+            {canCreate && (
+              <Button onClick={() => setFormOpen(true)}>
+                <Plus className="h-4 w-4" />
+                {t('fees.collect')}
+              </Button>
+            )}
+          </div>
         </div>
         {isLoading ? (
           <LoadingRows cols={8} />
@@ -276,11 +291,15 @@ function PaymentsTable({
       </CardContent>
 
       <FeeForm
-        open={editing !== null}
+        open={formOpen || editing !== null}
         onOpenChange={(open) => {
-          if (!open) setEditing(null);
+          if (!open) {
+            setFormOpen(false);
+            setEditing(null);
+          }
         }}
         fee={editing}
+        defaultFeeType={feeType}
       />
 
       <ConfirmDialog
@@ -323,6 +342,211 @@ function AdmissionTab() {
       year={year === 'all' ? undefined : Number(year)}
       filters={<AdmissionYearPicker value={year} onChange={setYear} />}
     />
+  );
+}
+
+function ContributionsTab() {
+  const { t, i18n } = useTranslation();
+  const { toast } = useToast();
+  const can = useCan();
+  const canCreate = can('fees', 'create');
+  const canUpdate = can('fees', 'update');
+  const canDelete = can('fees', 'delete');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+  const [year, setYear] = useState<string>('all');
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Contribution | null>(null);
+  const [deleting, setDeleting] = useState<Contribution | null>(null);
+  const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
+  const del = useDeleteContribution();
+  const sendWhatsApp = useSendContributionWhatsApp();
+
+  useEffect(() => {
+    setPage(1);
+  }, [year]);
+
+  const { data, isLoading, isError, refetch } = useContributions({
+    year: year === 'all' ? undefined : Number(year),
+    page,
+    limit,
+    sortBy: sort.sortBy || undefined,
+    sortOrder: sort.sortBy ? sort.sortOrder : undefined,
+  });
+
+  const onSort = (key: string) => {
+    toggle(key);
+    setPage(1);
+  };
+
+  const receipt = async (c: Contribution) => {
+    try {
+      await downloadContributionReceipt(c);
+    } catch (err) {
+      toast({ title: extractApiError(err).message, variant: 'destructive' });
+    }
+  };
+
+  const whatsapp = async (c: Contribution) => {
+    try {
+      const result = await sendWhatsApp.mutateAsync(c.id);
+      if (result.mode === 'walink') {
+        await downloadContributionReceipt(c);
+        window.open(result.link, '_blank', 'noopener,noreferrer');
+      }
+      toast({ title: t('fees.whatsapp'), variant: 'success' });
+    } catch (err) {
+      toast({ title: extractApiError(err).message, variant: 'destructive' });
+    }
+  };
+
+  const confirmDelete = () => {
+    if (!deleting) return;
+    del.mutate(deleting.id, {
+      onSuccess: () => {
+        toast({ title: t('fees.contributionDeleted'), variant: 'success' });
+        setDeleting(null);
+      },
+      onError: (err) => toast({ title: extractApiError(err).message, variant: 'destructive' }),
+    });
+  };
+
+  const typeLabel = (type: Contribution['contributorType']) =>
+    type === 'anonymous' ? t('fees.contributorAnonymous') : t('fees.contributorIndividual');
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <AdmissionYearPicker value={year} onChange={setYear} />
+          <div className="flex items-center gap-3">
+            {data && (
+              <div className="text-sm text-muted-foreground">
+                {t('common.total')}:{' '}
+                <span className="font-semibold text-foreground">
+                  {formatCurrency(data.totalAmount, i18n.language)}
+                </span>
+              </div>
+            )}
+            {canCreate && (
+              <Button onClick={() => setFormOpen(true)}>
+                <Plus className="h-4 w-4" />
+                {t('fees.addContribution')}
+              </Button>
+            )}
+          </div>
+        </div>
+        {isLoading ? (
+          <LoadingRows cols={7} />
+        ) : isError ? (
+          <ErrorState onRetry={refetch} />
+        ) : !data || data.items.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <SortableTableHead sortKey="receiptNo" sort={sort} onSort={onSort}>
+                  {t('fees.receiptNo')}
+                </SortableTableHead>
+                <SortableTableHead sortKey="contributorName" sort={sort} onSort={onSort}>
+                  {t('fees.contributorName')}
+                </SortableTableHead>
+                <SortableTableHead sortKey="contributorType" sort={sort} onSort={onSort}>
+                  {t('fees.contributorType')}
+                </SortableTableHead>
+                <SortableTableHead sortKey="date" sort={sort} onSort={onSort}>
+                  {t('fees.contributionDate')}
+                </SortableTableHead>
+                <SortableTableHead sortKey="amount" sort={sort} onSort={onSort} className="text-end">
+                  {t('fees.contributionAmount')}
+                </SortableTableHead>
+                <TableHead>{t('fees.contributionNotes')}</TableHead>
+                <TableHead className="text-end">{t('common.actions')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.items.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">{c.receiptNo}</TableCell>
+                  <TableCell>{c.contributorName}</TableCell>
+                  <TableCell>{typeLabel(c.contributorType)}</TableCell>
+                  <TableCell>{formatDate(c.date, i18n.language)}</TableCell>
+                  <TableCell className="text-end">{formatCurrency(c.amount, i18n.language)}</TableCell>
+                  <TableCell className="max-w-[12rem] truncate">{c.notes ?? '-'}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon" title={t('fees.receipt')} onClick={() => receipt(c)}>
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                      {canUpdate && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={t('fees.whatsapp')}
+                          onClick={() => whatsapp(c)}
+                        >
+                          <MessageCircle className="h-4 w-4 text-emerald-600" />
+                        </Button>
+                      )}
+                      {canUpdate && (
+                        <Button variant="ghost" size="icon" title={t('common.edit')} onClick={() => setEditing(c)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button variant="ghost" size="icon" title={t('common.delete')} onClick={() => setDeleting(c)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {data && data.total > 0 && (
+          <Pagination
+            page={page}
+            limit={limit}
+            total={data.total}
+            onPageChange={setPage}
+            onLimitChange={(l) => {
+              setLimit(l);
+              setPage(1);
+            }}
+          />
+        )}
+      </CardContent>
+
+      <ContributionForm
+        open={formOpen || editing !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setFormOpen(false);
+            setEditing(null);
+          }
+        }}
+        contribution={editing}
+      />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null);
+        }}
+        onConfirm={confirmDelete}
+        title={t('fees.confirmDeleteContributionTitle')}
+        message={t('fees.confirmDeleteContribution', {
+          receipt: deleting?.receiptNo ?? '',
+          name: deleting?.contributorName ?? '',
+        })}
+        confirmLabel={t('common.delete')}
+        destructive
+        pending={del.isPending}
+      />
+    </Card>
   );
 }
 
@@ -518,36 +742,24 @@ function DefaultersTab() {
 
 export function FeesPage() {
   const { t } = useTranslation();
-  const can = useCan();
-  const canCreate = can('fees', 'create');
-  const [formOpen, setFormOpen] = useState(false);
 
   return (
     <>
-      <PageHeader
-        title={t('fees.title')}
-        actions={
-          canCreate && (
-            <Button onClick={() => setFormOpen(true)}>
-              <Plus className="h-4 w-4" />
-              {t('fees.collect')}
-            </Button>
-          )
-        }
-      />
+      <PageHeader title={t('fees.title')} />
       <Tabs defaultValue="monthly">
         <TabsList>
           <TabsTrigger value="monthly">{t('fees.monthly')}</TabsTrigger>
           <TabsTrigger value="admission">{t('fees.admission')}</TabsTrigger>
+          <TabsTrigger value="contributions">{t('fees.contributions')}</TabsTrigger>
           <TabsTrigger value="defaulters">{t('fees.defaulters')}</TabsTrigger>
           <TabsTrigger value="structures">{t('fees.structures')}</TabsTrigger>
         </TabsList>
         <TabsContent value="monthly"><MonthlyTab /></TabsContent>
         <TabsContent value="admission"><AdmissionTab /></TabsContent>
+        <TabsContent value="contributions"><ContributionsTab /></TabsContent>
         <TabsContent value="defaulters"><DefaultersTab /></TabsContent>
         <TabsContent value="structures"><FeeStructures /></TabsContent>
       </Tabs>
-      <FeeForm open={formOpen} onOpenChange={setFormOpen} />
     </>
   );
 }

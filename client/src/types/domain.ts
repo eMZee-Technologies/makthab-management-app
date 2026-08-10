@@ -75,6 +75,21 @@ export interface FeePayment {
   student?: Student;
 }
 
+export interface Contribution {
+  id: number;
+  amount: number;
+  contributorName: string;
+  contributorType: 'individual' | 'anonymous';
+  date: string;
+  receiptNo: string;
+  notes?: string | null;
+  whatsappNo?: string | null;
+  pdfPath?: string | null;
+  whatsappSent: boolean;
+  recordedById: number;
+  createdAt: string;
+}
+
 export interface FeeStructure {
   id: number;
   classId: number;

@@ -1,4 +1,4 @@
-import { feePaymentRepository, expenseRepository } from "../db";
+import { feePaymentRepository, expenseRepository, contributionRepository } from "../db";
 
 // Human-readable, unique document numbers. Counts are safe under the API's
 // single-writer request handling; the unique DB constraint is the backstop.
@@ -93,4 +93,27 @@ export async function nextVoucherNo(): Promise<string> {
     return Number.isFinite(seq) && seq > m ? seq : m;
   }, 0);
   return `EXP-${stamp()}-${String(maxSeq + 1).padStart(4, "0")}`;
+}
+
+/**
+ * Contribution receipt number: CON-<dd-mm-yyyy>-<seq>
+ * Date is the contribution's `date` (zero-padded day/month). `seq` is a
+ * global 4-digit running serial among all CON-* receipts (max existing + 1).
+ * Example: CON-09-08-2026-0001. Immutable once assigned (PATCH ignores it).
+ */
+export async function nextContributionReceiptNo(date: Date): Promise<string> {
+  const receiptNos = await contributionRepository.findReceiptNosStartingWith("CON-");
+  const seqPattern = /^CON-\d{2}-\d{2}-\d{4}-(\d{4})$/;
+  const maxSeq = receiptNos.reduce((m, receiptNo) => {
+    const match = receiptNo.match(seqPattern);
+    const seq = match ? Number(match[1]) : NaN;
+    return Number.isFinite(seq) && seq > m ? seq : m;
+  }, 0);
+  const seq = String(maxSeq + 1).padStart(4, "0");
+  // Prefer UTC components so a date-only ISO string (midnight UTC) doesn't
+  // shift the calendar day when the server is west of UTC.
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = String(date.getUTCFullYear());
+  return `CON-${dd}-${mm}-${yyyy}-${seq}`;
 }

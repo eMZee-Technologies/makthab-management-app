@@ -27,7 +27,6 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
   { to: '/students', labelKey: 'nav.students', icon: Users },
   { to: '/classes', labelKey: 'nav.classes', icon: GraduationCap, resource: 'classes', action: 'view' },
-  { to: '/fees', labelKey: 'nav.fees', icon: ReceiptIndianRupee, resource: 'fees', action: 'view' },
   {
     to: '/attendance',
     labelKey: 'nav.attendance',
@@ -35,6 +34,7 @@ export const NAV_ITEMS: NavItem[] = [
     resource: 'attendance',
     action: 'view',
   },
+  { to: '/fees', labelKey: 'nav.fees', icon: ReceiptIndianRupee, resource: 'fees', action: 'view' },
   { to: '/finance', labelKey: 'nav.finance', icon: Wallet, resource: 'finance', action: 'view' },
   { to: '/reports', labelKey: 'nav.reports', icon: FileBarChart, resource: 'reports', action: 'view' },
   { to: '/users', labelKey: 'nav.users', icon: UserCog, resource: 'users', action: 'view' },

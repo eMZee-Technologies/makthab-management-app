@@ -13,9 +13,10 @@ const PDF = /application\/pdf/;
 const FS_YEAR = 2022;
 const FS_MONTHLY = 500;
 const FS_ADMISSION = 1000;
+const FS_CONTRIBUTIONS = 250;
 const FS_EXPENSES = 300;
 const FS_SALARIES = 1800;
-const FS_NET = FS_MONTHLY + FS_ADMISSION - FS_EXPENSES - FS_SALARIES; // -600
+const FS_NET = FS_MONTHLY + FS_ADMISSION + FS_CONTRIBUTIONS - FS_EXPENSES - FS_SALARIES; // -350
 
 // A year in which no other test file records a MONTHLY payment (fees.test uses
 // 2025/2026), so monthly-fee aggregations here are deterministic: exactly one
@@ -83,6 +84,7 @@ describeApi("reports", () => {
   const feePaymentIds: number[] = [];
   let expenseId: number | undefined;
   let salaryId: number | undefined;
+  let contributionId: number | undefined;
 
   beforeAll(async () => {
     token = await login(CREDS.admin.username, CREDS.admin.password);
@@ -147,10 +149,11 @@ describeApi("reports", () => {
     });
     feePaymentIds.push(future.body?.data?.id);
 
-    // Self-contained fixtures for FS_YEAR so all five financial-summary line
-    // items are non-zero and deterministic: monthly fee 500, admission fee 1000,
-    // expense 300 (cost*quantity), salary net 1800 (gross - deductions). Fees
-    // window by feeYear, salaries by salaryYear, expenses by expenseDate's year.
+    // Self-contained fixtures for FS_YEAR so all financial-summary line items
+    // are non-zero and deterministic: monthly fee 500, admission fee 1000,
+    // contribution 250, expense 300 (cost*quantity), salary net 1800
+    // (gross - deductions). Fees window by feeYear, salaries by salaryYear,
+    // expenses/contributions by their date fields' year.
     const fsMonthly = await request(app()).post(`${API}/fees`).set(bearer(token)).send({
       studentId,
       feeType: "monthly",
@@ -172,6 +175,13 @@ describeApi("reports", () => {
       paymentMethod: "cash",
     });
     feePaymentIds.push(fsAdmission.body?.data?.id);
+    const contribution = await request(app()).post(`${API}/contributions`).set(bearer(token)).send({
+      amount: FS_CONTRIBUTIONS,
+      contributorName: "QA Report Donor",
+      contributorType: "individual",
+      date: `${FS_YEAR}-04-15`,
+    });
+    contributionId = contribution.body?.data?.id;
     const expense = await request(app()).post(`${API}/expenses`).set(bearer(token)).send({
       categoryId: 1,
       cost: FS_EXPENSES,
@@ -211,6 +221,9 @@ describeApi("reports", () => {
     }
     if (expenseId != null) await request(app()).delete(`${API}/expenses/${expenseId}`).set(bearer(token));
     if (salaryId != null) await request(app()).delete(`${API}/salaries/${salaryId}`).set(bearer(token));
+    if (contributionId != null) {
+      await request(app()).delete(`${API}/contributions/${contributionId}`).set(bearer(token));
+    }
   });
 
   // --- existing coverage (unchanged) -------------------------------------
@@ -495,11 +508,14 @@ describeApi("reports", () => {
     expect(d.year).toBe(FS_YEAR);
     expect(d.monthlyFee).toBe(FS_MONTHLY);
     expect(d.admissionFee).toBe(FS_ADMISSION);
+    expect(d.contributions).toBe(FS_CONTRIBUTIONS);
     expect(d.expenses).toBe(FS_EXPENSES);
     expect(d.salaries).toBe(FS_SALARIES);
     expect(d.netBalance).toBe(FS_NET);
     // netBalance is the derived identity, not an independent field.
-    expect(d.netBalance).toBe(d.monthlyFee + d.admissionFee - d.expenses - d.salaries);
+    expect(d.netBalance).toBe(
+      d.monthlyFee + d.admissionFee + d.contributions - d.expenses - d.salaries
+    );
   });
 
   it("GET /reports/financial-summary/summary?view=year with no year -> 400", async () => {
@@ -519,6 +535,7 @@ describeApi("reports", () => {
       year: FS_YEAR,
       monthlyFee: FS_MONTHLY,
       admissionFee: FS_ADMISSION,
+      contributions: FS_CONTRIBUTIONS,
       expenses: FS_EXPENSES,
       salaries: FS_SALARIES,
       netBalance: FS_NET,
@@ -530,7 +547,9 @@ describeApi("reports", () => {
     expect(futureRow?.monthlyFee).toBe(700);
     // totals are the column-wise sum of the years array.
     const sum = (k: string) => d.years.reduce((s: number, y: Record<string, number>) => s + y[k], 0);
-    (["monthlyFee", "admissionFee", "expenses", "salaries", "netBalance"] as const).forEach((k) => {
+    (
+      ["monthlyFee", "admissionFee", "contributions", "expenses", "salaries", "netBalance"] as const
+    ).forEach((k) => {
       expect(d.totals[k]).toBe(sum(k));
     });
   });
@@ -549,7 +568,7 @@ describeApi("reports", () => {
     expect(r.headers["content-disposition"]).toBe(`${disposition}; filename="${filename}"`);
   });
 
-  it("financial-summary view=year xlsx carries the 5 labels and their amounts", async () => {
+  it("financial-summary view=year xlsx carries the 6 labels and their amounts", async () => {
     const r = await request(app())
       .get(`${API}/reports/financial-summary?view=year&year=${FS_YEAR}&format=xlsx`)
       .buffer()
@@ -558,12 +577,13 @@ describeApi("reports", () => {
     expect(r.status).toBe(200);
     expect(r.headers["content-type"]).toMatch(XLSX);
     const cells = await xlsxCellValues(r.body);
-    ["Monthly Fee", "Admission Fee", "Expenses", "Salaries", "Net Balance"].forEach((label) =>
-      expect(cells).toContain(label)
+    ["Monthly Fee", "Admission Fee", "Contributions", "Expenses", "Salaries", "Net Balance"].forEach(
+      (label) => expect(cells).toContain(label)
     );
     // Each amount is stored as a real number cell (formatting is display-only).
     expect(cells).toContain(String(FS_MONTHLY));
     expect(cells).toContain(String(FS_ADMISSION));
+    expect(cells).toContain(String(FS_CONTRIBUTIONS));
     expect(cells).toContain(String(FS_EXPENSES));
     expect(cells).toContain(String(FS_SALARIES));
     expect(cells).toContain(String(FS_NET));
