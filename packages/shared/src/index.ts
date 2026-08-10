@@ -8,6 +8,7 @@ export * from "./schemas/class";
 export * from "./schemas/fee";
 export * from "./schemas/contribution";
 export * from "./schemas/attendance";
+export * from "./schemas/progress";
 export * from "./schemas/finance";
 export * from "./schemas/report";
 export * from "./schemas/user";

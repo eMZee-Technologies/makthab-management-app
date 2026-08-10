@@ -48,13 +48,50 @@ model Student {
   class        Class        @relation(fields: [classId], references: [id])
   category     Category?    @relation(fields: [categoryId], references: [id])
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id])
-  feePayments  FeePayment[]
-  attendance   Attendance[]
+  feePayments      FeePayment[]
+  attendance       Attendance[]
+  monthlyProgress  MonthlyProgress[]
 
   @@index([classId])
   @@index([categoryId])
   @@index([academicYearId])
   @@index([status])
+}
+
+// Per-student monthly talimi / study progress (Admin + Teacher). Unique per
+// student+month+year. Attachments/links stored as JSON; editedById is the
+// Staff actor (same pattern as Attendance.markedById).
+model MonthlyProgress {
+  id                       Int      @id @default(autoincrement())
+  studentId                Int
+  month                    Int // 1-12
+  year                     Int
+  hoursStudied             Float
+  topicsCovered            String // "Portion" from Monthly Talimi Report
+  assessments              String
+  attendanceDays           Int // present days in the month
+  moodEngagement           String // excellent | good | average | needs_attention
+  goals                    String
+  notes                    String
+  previousMonthComparison  String?
+  progressPercent          Float? // 0-100
+  assignmentsCompleted     String?
+  softSkills               String?
+  reminders                String?
+  nextSteps                String?
+  linksJson                String? // JSON [{url,label?}]
+  attachmentsJson          String? // JSON [{key,filename,mime,size,uploadedAt}]
+  whatsappSent             Boolean  @default(false)
+  editedById               Int
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  student  Student @relation(fields: [studentId], references: [id])
+  editedBy Staff   @relation(fields: [editedById], references: [id])
+
+  @@unique([studentId, month, year])
+  @@index([month, year])
+  @@index([editedById])
 }
 
 model FeePayment {
@@ -159,6 +196,7 @@ model Staff {
   attendanceMarked       Attendance[]
   expensesApproved       Expense[]
   contributionsRecorded  Contribution[]
+  monthlyProgressEdited  MonthlyProgress[]
   classesTaught          Class[]
 }
 

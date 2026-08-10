@@ -8,6 +8,11 @@ export const PERMISSION_CATALOG = [
   { key: "classes.manage", label: "Manage classes", description: "Create, edit, and delete classes" },
   { key: "fees.manage", label: "Manage fees", description: "Record payments, defaulters, fee structures, receipts" },
   { key: "attendance.mark", label: "Mark attendance", description: "View and record student attendance" },
+  {
+    key: "progress.manage",
+    label: "Manage student progress",
+    description: "View and edit monthly student progress / talimi reports",
+  },
   { key: "finance.manage", label: "Manage finance", description: "Expenses, staff, and salaries" },
   { key: "reports.access", label: "Access reports", description: "View and download all reports" },
   { key: "users.manage", label: "Manage users", description: "Create and manage login accounts" },
@@ -58,6 +63,12 @@ export const RESOURCE_CATALOG = [
     key: "attendance",
     label: "Attendance",
     description: "View and mark student attendance",
+    actions: ["view", "create", "update", "delete"] as const,
+  },
+  {
+    key: "progress",
+    label: "Student Progress",
+    description: "Monthly talimi / study progress reports",
     actions: ["view", "create", "update", "delete"] as const,
   },
   {
@@ -118,18 +129,29 @@ export const resourceActionsSchema = z.object({
 });
 export type ResourceActions = z.infer<typeof resourceActionsSchema>;
 
+// Defaults keep older Role.permissions JSON (missing new resource keys) parseable
+// after RESOURCE_CATALOG grows — without this, safeParse fails and logins get an
+// empty matrix.
+const defaultResourceActions = () => ({
+  view: false,
+  create: false,
+  update: false,
+  delete: false,
+});
+
 const resourcesRecordSchema = z.object({
-  dashboard: resourceActionsSchema,
-  students: resourceActionsSchema,
-  classes: resourceActionsSchema,
-  fees: resourceActionsSchema,
-  attendance: resourceActionsSchema,
-  finance: resourceActionsSchema,
-  reports: resourceActionsSchema,
-  users: resourceActionsSchema,
-  roles: resourceActionsSchema,
-  organisation: resourceActionsSchema,
-  admin: resourceActionsSchema,
+  dashboard: resourceActionsSchema.default(defaultResourceActions),
+  students: resourceActionsSchema.default(defaultResourceActions),
+  classes: resourceActionsSchema.default(defaultResourceActions),
+  fees: resourceActionsSchema.default(defaultResourceActions),
+  attendance: resourceActionsSchema.default(defaultResourceActions),
+  progress: resourceActionsSchema.default(defaultResourceActions),
+  finance: resourceActionsSchema.default(defaultResourceActions),
+  reports: resourceActionsSchema.default(defaultResourceActions),
+  users: resourceActionsSchema.default(defaultResourceActions),
+  roles: resourceActionsSchema.default(defaultResourceActions),
+  organisation: resourceActionsSchema.default(defaultResourceActions),
+  admin: resourceActionsSchema.default(defaultResourceActions),
 });
 
 export const rolePermissionsMatrixSchema = z.object({
@@ -155,6 +177,7 @@ export const LEGACY_KEY_GRANTS: Record<
   "classes.manage": { classes: ["view", "create", "update", "delete"] },
   "fees.manage": { fees: ["view", "create", "update", "delete"] },
   "attendance.mark": { attendance: ["view", "create", "update"] },
+  "progress.manage": { progress: ["view", "create", "update", "delete"] },
   "finance.manage": { finance: ["view", "create", "update", "delete"] },
   "reports.access": { reports: ["view"] },
   "users.manage": { users: ["view", "create", "update", "delete"] },

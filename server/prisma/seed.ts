@@ -77,6 +77,7 @@ async function main() {
         "classes.manage",
         "fees.manage",
         "attendance.mark",
+        "progress.manage",
         "finance.manage",
         "reports.access",
         "users.manage",
@@ -90,7 +91,11 @@ async function main() {
       isFullAccess: false,
       permissions: ["fees.manage", "finance.manage", "reports.access"],
     },
-    { name: "Teacher", isFullAccess: false, permissions: ["attendance.mark"] },
+    {
+      name: "Teacher",
+      isFullAccess: false,
+      permissions: ["attendance.mark", "progress.manage"],
+    },
   ];
   for (const role of systemRoles) {
     const permissionsJson = encodeRolePermissionsForStorage(role.permissions, {

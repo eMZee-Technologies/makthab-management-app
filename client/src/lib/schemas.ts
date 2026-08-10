@@ -17,6 +17,7 @@ import {
   attendanceStatusSchema,
   studentStatusSchema,
   contributorTypeSchema,
+  moodEngagementSchema,
 } from '@makthab/shared';
 
 const requiredDate = z.string().min(1, 'Required');
@@ -194,3 +195,36 @@ export const contributionCreateSchema = z.object({
   ),
 });
 export type ContributionCreateInput = z.infer<typeof contributionCreateSchema>;
+
+const optionalText = z.preprocess(
+  (v) => (v === '' || v == null ? null : v),
+  z.string().trim().nullable().optional(),
+);
+
+/** Monthly student progress form — coerces HTML strings; enums from shared. */
+export const monthlyProgressFormSchema = z.object({
+  studentId: z.coerce.number().int().positive('Select a student'),
+  month: z.coerce.number().int().min(1).max(12),
+  year: z.coerce.number().int().min(2000).max(2100),
+  hoursStudied: z.coerce.number().min(0, 'Must be ≥ 0').max(744),
+  topicsCovered: z.string().trim().min(1, 'Required'),
+  assessments: z.string().trim().min(1, 'Required'),
+  attendanceDays: z.coerce.number().int().min(0).max(31),
+  moodEngagement: moodEngagementSchema,
+  goals: z.string().trim().min(1, 'Required'),
+  notes: z.string().trim().min(1, 'Required'),
+  previousMonthComparison: optionalText,
+  progressPercent: z.preprocess(
+    (v) => (v === '' || v == null ? null : v),
+    z.coerce.number().min(0).max(100).nullable().optional(),
+  ),
+  assignmentsCompleted: optionalText,
+  softSkills: optionalText,
+  reminders: optionalText,
+  nextSteps: optionalText,
+  linksText: z.preprocess(
+    (v) => (v === '' || v == null ? '' : v),
+    z.string().optional(),
+  ),
+});
+export type MonthlyProgressFormInput = z.infer<typeof monthlyProgressFormSchema>;

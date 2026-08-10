@@ -10,6 +10,7 @@ export type {
   Expense,
   ExpenseCategory,
   Contribution,
+  MonthlyProgress,
   Staff,
   User,
   SalaryPayment,
