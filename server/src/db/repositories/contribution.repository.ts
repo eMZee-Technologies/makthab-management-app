@@ -78,6 +78,18 @@ export const contributionRepository = {
     ]);
     return { items, total, totalAmount: agg._sum.amount ?? 0 };
   },
+
+  async findAllAmountsWithDate() {
+    return prisma.contribution.findMany({ select: { amount: true, date: true } });
+  },
+
+  async sumByDateWindow(window: { gte: Date; lt: Date }): Promise<number> {
+    const agg = await prisma.contribution.aggregate({
+      _sum: { amount: true },
+      where: { date: window },
+    });
+    return agg._sum.amount ?? 0;
+  },
 };
 
 export type { Contribution };

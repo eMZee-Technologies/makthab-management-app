@@ -1,6 +1,6 @@
 import type { Response } from "express";
 import { Router } from "express";
-import { feePaymentRepository, salaryPaymentRepository, expenseRepository, studentRepository, attendanceRepository } from "../db";
+import { feePaymentRepository, salaryPaymentRepository, expenseRepository, studentRepository, attendanceRepository, contributionRepository } from "../db";
 import { asyncHandler } from "../lib/asyncHandler";
 import { requireAuth, requireResourcePermission } from "../middleware/auth";
 import { validateQuery } from "../middleware/validate";
@@ -103,30 +103,40 @@ export async function yearlySalaryBreakdown(): Promise<YearlySalaryBreakdownRow[
   return out;
 }
 
-// Summarize a single year: monthly fee + admission fee income, expenses,
-// salaries, and derived net balance. Fees window by feeYear (not paymentDate)
-// so a payment counts toward the year it settles.
+// Summarize a single year: monthly fee + admission fee + contributions income,
+// expenses, salaries, and derived net balance. Fees window by feeYear (not
+// paymentDate) so a payment counts toward the year it settles; contributions
+// and expenses window by their date fields.
 async function financialSummaryForYear(year: number): Promise<FinancialSummaryYearData> {
   const yearWindow = { gte: new Date(year, 0, 1), lt: new Date(year + 1, 0, 1) };
-  const [monthlyFee, admissionFee, expenses, salaries] = await Promise.all([
+  const [monthlyFee, admissionFee, contributions, expenses, salaries] = await Promise.all([
     feePaymentRepository.sumAmountPaid({ feeType: "monthly", feeYear: year }),
     feePaymentRepository.sumAmountPaid({ feeType: "admission", feeYear: year }),
+    contributionRepository.sumByDateWindow(yearWindow),
     expenseRepository.sumByDateWindow(yearWindow),
     salaryPaymentRepository.sumByYear(year),
   ]);
-  return { monthlyFee, admissionFee, expenses, salaries, netBalance: monthlyFee + admissionFee - expenses - salaries };
+  return {
+    monthlyFee,
+    admissionFee,
+    contributions,
+    expenses,
+    salaries,
+    netBalance: monthlyFee + admissionFee + contributions - expenses - salaries,
+  };
 }
 
 // One row per year across all data, earliest year present through the current
 // year (or later if data exists beyond it), zero-filled, ascending.
 async function financialSummaryAllYears(): Promise<FinancialSummaryYearRow[]> {
-  // Expense has no year column (only expenseDate), so group it in JS; the other
-  // three sources have feeYear/salaryYear and use groupBy like their siblings.
-  const [monthlyG, admissionG, salaryG, expenses] = await Promise.all([
+  // Expense and Contribution have no year column (only date), so group in JS;
+  // the other sources have feeYear/salaryYear and use groupBy like their siblings.
+  const [monthlyG, admissionG, salaryG, expenses, contributions] = await Promise.all([
     feePaymentRepository.groupByYear("monthly"),
     feePaymentRepository.groupByYear("admission"),
     salaryPaymentRepository.groupByYear(),
     expenseRepository.findAllAmountsWithDate(),
+    contributionRepository.findAllAmountsWithDate(),
   ]);
   const monthlyByYear = new Map(monthlyG.map((g) => [g.feeYear, g._sum.amountPaid ?? 0]));
   const admissionByYear = new Map(admissionG.map((g) => [g.feeYear, g._sum.amountPaid ?? 0]));
@@ -136,17 +146,37 @@ async function financialSummaryAllYears(): Promise<FinancialSummaryYearRow[]> {
     const y = new Date(e.expenseDate).getFullYear();
     expenseByYear.set(y, (expenseByYear.get(y) ?? 0) + e.amount);
   }
+  const contributionByYear = new Map<number, number>();
+  for (const c of contributions) {
+    const y = new Date(c.date).getFullYear();
+    contributionByYear.set(y, (contributionByYear.get(y) ?? 0) + c.amount);
+  }
   const currentYear = new Date().getFullYear();
-  const allYears = [...monthlyByYear.keys(), ...admissionByYear.keys(), ...salaryByYear.keys(), ...expenseByYear.keys()];
+  const allYears = [
+    ...monthlyByYear.keys(),
+    ...admissionByYear.keys(),
+    ...salaryByYear.keys(),
+    ...expenseByYear.keys(),
+    ...contributionByYear.keys(),
+  ];
   const minYear = allYears.length ? Math.min(...allYears) : currentYear;
   const maxYear = Math.max(currentYear, ...(allYears.length ? allYears : [currentYear]));
   const out: FinancialSummaryYearRow[] = [];
   for (let y = minYear; y <= maxYear; y++) {
     const monthlyFee = monthlyByYear.get(y) ?? 0;
     const admissionFee = admissionByYear.get(y) ?? 0;
+    const contrib = contributionByYear.get(y) ?? 0;
     const expensesTotal = expenseByYear.get(y) ?? 0;
     const salaries = salaryByYear.get(y) ?? 0;
-    out.push({ year: y, monthlyFee, admissionFee, expenses: expensesTotal, salaries, netBalance: monthlyFee + admissionFee - expensesTotal - salaries });
+    out.push({
+      year: y,
+      monthlyFee,
+      admissionFee,
+      contributions: contrib,
+      expenses: expensesTotal,
+      salaries,
+      netBalance: monthlyFee + admissionFee + contrib - expensesTotal - salaries,
+    });
   }
   return out;
 }
@@ -552,11 +582,12 @@ reportsRouter.get(
       (acc, y) => ({
         monthlyFee: acc.monthlyFee + y.monthlyFee,
         admissionFee: acc.admissionFee + y.admissionFee,
+        contributions: acc.contributions + y.contributions,
         expenses: acc.expenses + y.expenses,
         salaries: acc.salaries + y.salaries,
         netBalance: acc.netBalance + y.netBalance,
       }),
-      { monthlyFee: 0, admissionFee: 0, expenses: 0, salaries: 0, netBalance: 0 }
+      { monthlyFee: 0, admissionFee: 0, contributions: 0, expenses: 0, salaries: 0, netBalance: 0 }
     );
     res.json({ data: { view: "all", years, totals } });
   })
@@ -576,9 +607,17 @@ reportsRouter.get(
         {
           title: "Financial Summary",
           subtitle: "All",
-          headers: ["Year", "Monthly Fee", "Admission Fee", "Expenses", "Salaries", "Net Balance"],
-          rows: years.map((y) => [y.year, y.monthlyFee, y.admissionFee, y.expenses, y.salaries, y.netBalance]),
-          currencyCols: [1, 2, 3, 4, 5],
+          headers: ["Year", "Monthly Fee", "Admission Fee", "Contributions", "Expenses", "Salaries", "Net Balance"],
+          rows: years.map((y) => [
+            y.year,
+            y.monthlyFee,
+            y.admissionFee,
+            y.contributions,
+            y.expenses,
+            y.salaries,
+            y.netBalance,
+          ]),
+          currencyCols: [1, 2, 3, 4, 5, 6],
           totalsRow: true,
         },
         false,
@@ -587,7 +626,8 @@ reportsRouter.get(
       return;
     }
     const year = Number(req.query.year) || new Date().getFullYear();
-    const { monthlyFee, admissionFee, expenses, salaries, netBalance } = await financialSummaryForYear(year);
+    const { monthlyFee, admissionFee, contributions, expenses, salaries, netBalance } =
+      await financialSummaryForYear(year);
     await send(
       res,
       req.query.format,
@@ -598,6 +638,7 @@ reportsRouter.get(
         rows: [
           ["Monthly Fee", monthlyFee],
           ["Admission Fee", admissionFee],
+          ["Contributions", contributions],
           ["Expenses", expenses],
           ["Salaries", salaries],
           ["Net Balance", netBalance],

@@ -115,10 +115,12 @@ function PaymentsTable({
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const can = useCan();
+  const canCreate = can('fees', 'create');
   const canUpdate = can('fees', 'update');
   const canDelete = can('fees', 'delete');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+  const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<FeePayment | null>(null);
   const [deleting, setDeleting] = useState<FeePayment | null>(null);
   const { sort, toggle } = useSort({ sortBy: '', sortOrder: 'asc' });
@@ -182,16 +184,24 @@ function PaymentsTable({
   return (
     <Card>
       <CardContent className="space-y-4 pt-6">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           {filters}
-          {data && (
-            <div className="text-sm text-muted-foreground">
-              {t('common.total')}:{' '}
-              <span className="font-semibold text-foreground">
-                {formatCurrency(data.totalPaid, i18n.language)}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {data && (
+              <div className="text-sm text-muted-foreground">
+                {t('common.total')}:{' '}
+                <span className="font-semibold text-foreground">
+                  {formatCurrency(data.totalPaid, i18n.language)}
+                </span>
+              </div>
+            )}
+            {canCreate && (
+              <Button onClick={() => setFormOpen(true)}>
+                <Plus className="h-4 w-4" />
+                {t('fees.collect')}
+              </Button>
+            )}
+          </div>
         </div>
         {isLoading ? (
           <LoadingRows cols={8} />
@@ -281,11 +291,15 @@ function PaymentsTable({
       </CardContent>
 
       <FeeForm
-        open={editing !== null}
+        open={formOpen || editing !== null}
         onOpenChange={(open) => {
-          if (!open) setEditing(null);
+          if (!open) {
+            setFormOpen(false);
+            setEditing(null);
+          }
         }}
         fee={editing}
+        defaultFeeType={feeType}
       />
 
       <ConfirmDialog
@@ -728,23 +742,10 @@ function DefaultersTab() {
 
 export function FeesPage() {
   const { t } = useTranslation();
-  const can = useCan();
-  const canCreate = can('fees', 'create');
-  const [formOpen, setFormOpen] = useState(false);
 
   return (
     <>
-      <PageHeader
-        title={t('fees.title')}
-        actions={
-          canCreate && (
-            <Button onClick={() => setFormOpen(true)}>
-              <Plus className="h-4 w-4" />
-              {t('fees.collect')}
-            </Button>
-          )
-        }
-      />
+      <PageHeader title={t('fees.title')} />
       <Tabs defaultValue="monthly">
         <TabsList>
           <TabsTrigger value="monthly">{t('fees.monthly')}</TabsTrigger>
@@ -759,7 +760,6 @@ export function FeesPage() {
         <TabsContent value="defaulters"><DefaultersTab /></TabsContent>
         <TabsContent value="structures"><FeeStructures /></TabsContent>
       </Tabs>
-      <FeeForm open={formOpen} onOpenChange={setFormOpen} />
     </>
   );
 }

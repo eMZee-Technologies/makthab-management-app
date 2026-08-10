@@ -104,6 +104,7 @@ export type FinancialSummaryQuery = z.infer<typeof financialSummaryQuery>;
 export interface FinancialSummaryYearData {
   monthlyFee: number;
   admissionFee: number;
+  contributions: number;
   expenses: number;
   salaries: number;
   netBalance: number;

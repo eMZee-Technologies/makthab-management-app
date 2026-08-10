@@ -842,6 +842,10 @@ function FinancialSummaryYearView() {
               <TableCell className="text-end">{formatCurrency(data.admissionFee, i18n.language)}</TableCell>
             </TableRow>
             <TableRow>
+              <TableCell className="font-medium">{t('reports.contributions')}</TableCell>
+              <TableCell className="text-end">{formatCurrency(data.contributions, i18n.language)}</TableCell>
+            </TableRow>
+            <TableRow>
               <TableCell className="font-medium">{t('nav.expenses')}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.expenses, i18n.language)}</TableCell>
             </TableRow>
@@ -876,7 +880,7 @@ function FinancialSummaryAllView() {
       }
     >
       {isLoading ? (
-        <LoadingRows cols={6} />
+        <LoadingRows cols={7} />
       ) : isError ? (
         <ErrorState onRetry={refetch} />
       ) : !data || data.years.length === 0 ? (
@@ -888,6 +892,7 @@ function FinancialSummaryAllView() {
               <TableHead>{t('reports.year')}</TableHead>
               <TableHead className="text-end">{t('reports.monthlyFee')}</TableHead>
               <TableHead className="text-end">{t('reports.admissionFee')}</TableHead>
+              <TableHead className="text-end">{t('reports.contributions')}</TableHead>
               <TableHead className="text-end">{t('nav.expenses')}</TableHead>
               <TableHead className="text-end">{t('nav.salaries')}</TableHead>
               <TableHead className="text-end">{t('reports.netBalance')}</TableHead>
@@ -899,6 +904,7 @@ function FinancialSummaryAllView() {
                 <TableCell className="font-medium">{y.year}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.monthlyFee, i18n.language)}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.admissionFee, i18n.language)}</TableCell>
+                <TableCell className="text-end">{formatCurrency(y.contributions, i18n.language)}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.expenses, i18n.language)}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.salaries, i18n.language)}</TableCell>
                 <TableCell className="text-end">{formatCurrency(y.netBalance, i18n.language)}</TableCell>
@@ -908,6 +914,7 @@ function FinancialSummaryAllView() {
               <TableCell>{t('common.total')}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.monthlyFee, i18n.language)}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.admissionFee, i18n.language)}</TableCell>
+              <TableCell className="text-end">{formatCurrency(data.totals.contributions, i18n.language)}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.expenses, i18n.language)}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.salaries, i18n.language)}</TableCell>
               <TableCell className="text-end">{formatCurrency(data.totals.netBalance, i18n.language)}</TableCell>

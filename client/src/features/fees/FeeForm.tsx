@@ -28,13 +28,15 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   presetStudentId?: number;
+  /** Prefill fee type when collecting from Monthly / Admission tabs. */
+  defaultFeeType?: 'monthly' | 'admission' | 'annual' | 'other';
   fee?: FeePayment | null;
 }
 
 const FEE_TYPES = ['admission', 'monthly', 'annual', 'other'] as const;
 const METHODS = ['cash', 'upi', 'bank', 'cheque', 'card'] as const;
 
-export function FeeForm({ open, onOpenChange, presetStudentId, fee }: Props) {
+export function FeeForm({ open, onOpenChange, presetStudentId, defaultFeeType = 'monthly', fee }: Props) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const isEdit = fee != null;
@@ -67,7 +69,7 @@ export function FeeForm({ open, onOpenChange, presetStudentId, fee }: Props) {
     resolver: zodResolver(feePaymentCreateSchema),
     defaultValues: {
       studentId: presetStudentId,
-      feeType: 'monthly',
+      feeType: defaultFeeType,
       feeYear: new Date().getFullYear(),
       paymentMethod: 'cash',
       paymentDate: toDateInput(new Date()),
@@ -92,14 +94,14 @@ export function FeeForm({ open, onOpenChange, presetStudentId, fee }: Props) {
           } as unknown as FeePaymentCreateInput)
         : ({
             studentId: presetStudentId,
-            feeType: 'monthly',
+            feeType: defaultFeeType,
             feeYear: new Date().getFullYear(),
             paymentMethod: 'cash',
             paymentDate: toDateInput(new Date()),
             waiverAmount: 0,
           } as Partial<FeePaymentCreateInput> as FeePaymentCreateInput),
     );
-  }, [open, fee, presetStudentId, reset]);
+  }, [open, fee, presetStudentId, defaultFeeType, reset]);
 
   const feeType = watch('feeType');
 
