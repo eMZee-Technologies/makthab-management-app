@@ -5,19 +5,22 @@ export const contributionRepository = {
   findById(id: number) {
     return prisma.contribution.findUnique({
       where: { id },
-      include: { recordedBy: true },
+      include: { recordedBy: { include: { user: true } } },
     });
   },
 
   create(data: Prisma.ContributionUncheckedCreateInput) {
-    return prisma.contribution.create({ data, include: { recordedBy: true } });
+    return prisma.contribution.create({
+      data,
+      include: { recordedBy: { include: { user: true } } },
+    });
   },
 
   update(id: number, data: Prisma.ContributionUncheckedUpdateInput) {
     return prisma.contribution.update({
       where: { id },
       data,
-      include: { recordedBy: true },
+      include: { recordedBy: { include: { user: true } } },
     });
   },
 
@@ -25,7 +28,7 @@ export const contributionRepository = {
     return prisma.contribution.update({
       where: { id },
       data: { pdfPath },
-      include: { recordedBy: true },
+      include: { recordedBy: { include: { user: true } } },
     });
   },
 
@@ -68,7 +71,7 @@ export const contributionRepository = {
     const [items, total, agg] = await Promise.all([
       prisma.contribution.findMany({
         where,
-        include: { recordedBy: true },
+        include: { recordedBy: { include: { user: true } } },
         orderBy: orderBy as Prisma.ContributionOrderByWithRelationInput,
         skip: (q.page - 1) * q.limit,
         take: q.limit,

@@ -88,11 +88,15 @@ async function receiptPdf(fee: NonNullable<FeeWithStudent>): Promise<Buffer> {
     feeType: feeTypeLabel(fee.feeType),
     period: periodLabel(fee.feeMonth, fee.feeYear),
     amountPaid: fee.amountPaid,
+    // The collecting Staff record's `role` is a legacy fixed field set once in
+    // the staff form; it can drift from the linked User's actual (DB-backed,
+    // admin-editable) login role. Prefer the live login role so a promoted
+    // Admin doesn't keep printing as their original "Teacher" staff role.
     signature: fee.collectedBy
       ? {
         image: await loadSignatureImage(fee.collectedBy.signaturePath),
         staffName: fee.collectedBy.fullName,
-        staffRole: fee.collectedBy.role,
+        staffRole: fee.collectedBy.user?.role ?? fee.collectedBy.role,
       }
       : undefined,
   });

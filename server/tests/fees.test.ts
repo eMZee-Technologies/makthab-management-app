@@ -130,8 +130,13 @@ describeApi("fees", () => {
       .parse(binaryParser);
     const pdfText = (r.body as Buffer).toString("latin1");
     expect(pdfText).toContain("/Filter /DCTDecode");
-    // Parentheses are backslash-escaped in PDF text operators (see esc() in lib/pdf.ts).
-    expect(pdfText).toContain("Accountant \\(Accountant\\)");
+    // The signature block prints the staff name above the rule and the role
+    // below it as two separate text operators (not one combined "Name (Role)"
+    // string) — the seeded accountant's fullName and role are both literally
+    // "Accountant", so each line renders as its own "(Accountant) Tj" op.
+    expect(pdfText).not.toContain("Accountant \\(Accountant\\)");
+    const staffLines = pdfText.match(/\(Accountant\) Tj/g) ?? [];
+    expect(staffLines.length).toBeGreaterThanOrEqual(2);
   });
 
   it("POST /fees/:id/whatsapp -> dispatch (wa.me link for MVP) {data}", async () => {
