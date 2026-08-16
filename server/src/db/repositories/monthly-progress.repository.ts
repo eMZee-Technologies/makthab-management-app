@@ -195,7 +195,7 @@ export const monthlyProgressRepository = {
       prisma.student.findMany({
         where: studentWhere,
         include: { class: true, category: true },
-        orderBy: { fullName: q.sortOrder ?? "asc" },
+        orderBy: { admissionNo: q.sortOrder ?? "asc" },
         skip: (q.page - 1) * q.limit,
         take: q.limit,
       }),

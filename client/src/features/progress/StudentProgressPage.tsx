@@ -171,7 +171,7 @@ export function StudentProgressPage() {
           </div>
 
           {isLoading ? (
-            <LoadingRows cols={7} />
+            <LoadingRows cols={9} />
           ) : isError ? (
             <ErrorState onRetry={() => void refetch()} />
           ) : !data?.items.length ? (
@@ -181,7 +181,9 @@ export function StudentProgressPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>{t('students.admissionNo')}</TableHead>
                     <TableHead>{t('progress.studentName')}</TableHead>
+                    <TableHead className="hidden md:table-cell">{t('students.category')}</TableHead>
                     <TableHead className="hidden md:table-cell">{t('students.class')}</TableHead>
                     <TableHead>{t('progress.topicsCovered')}</TableHead>
                     <TableHead className="hidden sm:table-cell">{t('progress.attendanceDays')}</TableHead>
@@ -195,7 +197,11 @@ export function StudentProgressPage() {
                     const p = row.progress;
                     return (
                       <TableRow key={row.student.id}>
+                        <TableCell>{row.student.admissionNo}</TableCell>
                         <TableCell className="font-medium">{row.student.fullName}</TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          {row.student.category?.name ?? '—'}
+                        </TableCell>
                         <TableCell className="hidden md:table-cell">
                           {row.student.class?.name ?? '—'}
                         </TableCell>
