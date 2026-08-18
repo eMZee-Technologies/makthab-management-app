@@ -124,7 +124,7 @@ function buildWhatsAppMessage(row: {
     row.progressPercent != null ? `\nProgress: ${row.progressPercent}%` : "";
   const next = row.nextSteps?.trim() ? `\nNext steps: ${row.nextSteps.trim()}` : "";
   return (
-    `Assalamu Alaikum.\n` +
+    `Assalamu Alaikum Warahmatullahi Wabarakatuh.\n` +
     `Monthly study progress for ${name}` +
     (row.student?.admissionNo ? ` (${row.student.admissionNo})` : "") +
     ` — ${period}.\n` +

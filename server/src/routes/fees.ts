@@ -412,7 +412,7 @@ feesRouter.post(
       throw new AppError(400, "no_whatsapp_number", "Student has no WhatsApp number on file");
     }
     const caption =
-      `Assalamu Alaikum. Fee receipt ${fee.receiptNo} for ${fee.student.fullName} ` +
+      `Assalamu Alaikum Warahmatullahi Wabarakatuh. Fee receipt ${fee.receiptNo} for ${fee.student.fullName} ` +
       `${captionPeriodClause(fee.feeType, fee.feeMonth, fee.feeYear)}: ` +
       `₹ ${fee.amountPaid.toFixed(2)}/- paid on ${formatReceiptDate(fee.paymentDate)}. JazakAllah.`;
 

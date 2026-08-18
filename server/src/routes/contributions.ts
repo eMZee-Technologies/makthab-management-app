@@ -287,7 +287,7 @@ contributionsRouter.post(
     }
 
     const caption =
-      `Assalamu Alaikum. Contribution receipt ${row.receiptNo} from ${row.contributorName} ` +
+      `Assalamu Alaikum Warahmatullahi Wabarakatuh. Contribution receipt ${row.receiptNo} from ${row.contributorName} ` +
       `(${contributorTypeLabel(row.contributorType)}): ` +
       `₹ ${row.amount.toFixed(2)}/- received on ${formatReceiptDate(row.date)}. JazakAllah.`;
 

@@ -184,7 +184,7 @@
     "allYears": "All",
     "editAmountDue": "Edit Amount Due",
     "amountDueUpdated": "Amount due updated successfully",
-    "defaulterWhatsapp": "Dear Parent, the fee of {{amount}} for {{name}} ({{month}} {{year}}) is still pending. Please clear it at your earliest convenience. Kindly ignore this message if you have already made the payment.",
+    "defaulterWhatsapp": "Assalamu Alaikum Warahmatullahi Wabarakatuh, the fee of {{amount}} for {{name}} ({{month}} {{year}}) is still pending. Please clear it at your earliest convenience. Kindly ignore this message if you have already made the payment.",
     "confirmDeleteStructureTitle": "Delete Fee Structure",
     "confirmDeleteStructure": "Delete the {{feeType}} fee structure for {{class}}? This cannot be undone.",
     "structureDeleted": "Fee structure deleted successfully"
