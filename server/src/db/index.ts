@@ -38,6 +38,8 @@ export { roleRepository } from "./repositories/role.repository";
 export type { Role } from "./repositories/role.repository";
 export { rolePermissionAuditRepository } from "./repositories/role-permission-audit.repository";
 export type { RolePermissionAudit } from "./repositories/role-permission-audit.repository";
+export { monthlyProgressRepository } from "./repositories/monthly-progress.repository";
+export type { MonthlyProgress } from "./repositories/monthly-progress.repository";
 export { auditLogRepository } from "./repositories/audit-log.repository";
 export type { AuditLog } from "./repositories/audit-log.repository";
 export { refreshSessionRepository } from "./repositories/refresh-session.repository";

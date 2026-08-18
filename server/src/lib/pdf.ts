@@ -553,16 +553,22 @@ function layoutReceipt(doc: ReceiptDoc): { cmds: DrawCmd[]; images: EmbeddedImag
 
   const authX1 = innerLeft;
   const authX2 = authX1 + colW;
+  // The signature image fills the open space above the rule — mirroring the
+  // blank space left for a handwritten signature above the "Receiver's
+  // Signature" rule on the right — and the printed Name/Role label stacks
+  // below the rule, same as a conventional signature block.
   if (doc.signature?.image) {
     const imgW = 90;
-    const imgH = 26;
-    image(authX1 + (colW - imgW) / 2, sigY + 5, imgW, imgH, doc.signature.image);
+    const imgH = 28;
+    image(authX1 + (colW - imgW) / 2, sigY + 10, imgW, imgH, doc.signature.image);
   }
   hRule(authX1, sigY, authX2);
-  const staffLabel = doc.signature
-    ? `${doc.signature.staffName} (${doc.signature.staffRole})`
-    : "";
-  text(centerX(staffLabel || "Authorized Signatory", 8, false, authX1, colW), sigY - 10, staffLabel || "Authorized Signatory", 8, false, RECEIPT_LABEL_COLOR);
+  const staffName = doc.signature?.staffName ?? "Authorized Signatory";
+  text(centerX(staffName, 8, false, authX1, colW), sigY - 10, staffName, 8, false, RECEIPT_LABEL_COLOR);
+  const staffRole = doc.signature?.staffRole ?? "";
+  if (staffRole) {
+    text(centerX(staffRole, 8, false, authX1, colW), sigY - 19, staffRole, 8, false, RECEIPT_LABEL_COLOR);
+  }
 
   const sigX2 = innerRight;
   const sigX1 = sigX2 - colW;

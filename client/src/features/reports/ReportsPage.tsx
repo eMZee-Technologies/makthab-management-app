@@ -1,6 +1,6 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, Fragment, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, FileSpreadsheet } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, FileSpreadsheet } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,13 +9,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { LoadingRows, ErrorState, EmptyState } from '@/components/QueryState';
 import { Pagination, DEFAULT_PAGE_SIZE } from '@/components/Pagination';
+import { SortableTableHead, useSort } from '@/components/SortableTableHead';
 import { useToast } from '@/components/ui/use-toast';
 import { formatCurrency, formatNumber, formatDate, monthName } from '@/lib/format';
 import { downloadFile } from '@/lib/download';
 import { extractApiError } from '@/api/client';
 import { useFees, useDefaulters, useContributions } from '@/features/fees/api';
 import { useExpenses, useSalaries } from '@/features/finance/api';
+import { useCategories, useClasses } from '@/api/reference';
 import type { FeePayment, Expense, SalaryPayment, Defaulter, Contribution } from '@/types/domain';
+import type { StudentProgressReportRow } from '@makthab/shared';
 import {
   useFeeCollectionYearSummary,
   useFeeCollectionAllSummary,
@@ -23,6 +26,7 @@ import {
   useSalaryRegisterAllSummary,
   useFinancialSummaryYearSummary,
   useFinancialSummaryAllSummary,
+  useStudentProgressReportSummary,
 } from './api';
 
 const now = new Date();
@@ -51,11 +55,19 @@ function MonthSelect({ month, onMonth }: { month: number; onMonth: (m: number) =
   );
 }
 
-function YearSelect({ year, onYear }: { year: number; onYear: (y: number) => void }) {
+function YearSelect({
+  year,
+  onYear,
+  id,
+}: {
+  year: number;
+  onYear: (y: number) => void;
+  id?: string;
+}) {
   const years = [now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2];
   return (
     <Select value={String(year)} onValueChange={(v) => onYear(Number(v))}>
-      <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+      <SelectTrigger id={id} className="w-28"><SelectValue /></SelectTrigger>
       <SelectContent>
         {years.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
       </SelectContent>
@@ -1026,13 +1038,338 @@ function DefaultersReportTab() {
   );
 }
 
+function StudentProgressReportTable({
+  year,
+  month,
+  classId,
+  categoryId,
+}: {
+  year: number;
+  month?: number;
+  classId?: number;
+  categoryId?: number;
+}) {
+  const { t, i18n } = useTranslation();
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
+  const { sort, toggle } = useSort({ sortBy: 'fullName', sortOrder: 'asc' });
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  useEffect(() => {
+    setPage(1);
+    setExpanded(null);
+  }, [year, month, classId, categoryId, sort.sortBy, sort.sortOrder]);
+
+  const { data, isLoading, isError, refetch } = useStudentProgressReportSummary({
+    year,
+    month,
+    class_id: classId,
+    category_id: categoryId,
+    page,
+    limit,
+    sortBy: sort.sortBy || undefined,
+    sortOrder: sort.sortBy ? sort.sortOrder : undefined,
+  });
+
+  const onSort = (key: string) => {
+    toggle(key);
+    setPage(1);
+  };
+
+  return (
+    <>
+      {isLoading ? (
+        <LoadingRows cols={8} />
+      ) : isError ? (
+        <ErrorState onRetry={() => void refetch()} />
+      ) : !data || data.items.length === 0 ? (
+        <EmptyState message={t('reports.studentProgressEmpty')} />
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-8 md:hidden">
+                  <span className="sr-only">{t('reports.details')}</span>
+                </TableHead>
+                <SortableTableHead sortKey="admissionNo" sort={sort} onSort={onSort}>
+                  {t('fees.admissionNo')}
+                </SortableTableHead>
+                <SortableTableHead sortKey="fullName" sort={sort} onSort={onSort}>
+                  {t('students.fullName')}
+                </SortableTableHead>
+                <TableHead className="hidden sm:table-cell">{t('students.class')}</TableHead>
+                <TableHead className="hidden md:table-cell">{t('students.category')}</TableHead>
+                <SortableTableHead sortKey="month" sort={sort} onSort={onSort}>
+                  {t('reports.month')}
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="hoursStudied"
+                  sort={sort}
+                  onSort={onSort}
+                  className="hidden lg:table-cell text-end"
+                >
+                  {t('progress.hoursStudied')}
+                </SortableTableHead>
+                <TableHead className="hidden lg:table-cell">{t('progress.topicsCovered')}</TableHead>
+                <SortableTableHead
+                  sortKey="attendanceDays"
+                  sort={sort}
+                  onSort={onSort}
+                  className="text-end"
+                >
+                  {t('progress.attendanceDays')}
+                </SortableTableHead>
+                <SortableTableHead
+                  sortKey="progressPercent"
+                  sort={sort}
+                  onSort={onSort}
+                  className="hidden sm:table-cell text-end"
+                >
+                  {t('progress.progressPercent')}
+                </SortableTableHead>
+                <TableHead className="hidden xl:table-cell">{t('progress.moodEngagement')}</TableHead>
+                <TableHead className="hidden xl:table-cell">{t('progress.assessments')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.items.map((row: StudentProgressReportRow) => {
+                const open = expanded === row.id;
+                return (
+                  <Fragment key={row.id}>
+                    <TableRow>
+                      <TableCell className="md:hidden">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-expanded={open}
+                          aria-label={t('reports.details')}
+                          onClick={() => setExpanded(open ? null : row.id)}
+                        >
+                          {open ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </TableCell>
+                      <TableCell className="font-medium">{row.admissionNo}</TableCell>
+                      <TableCell>{row.fullName}</TableCell>
+                      <TableCell className="hidden sm:table-cell">{row.className ?? '—'}</TableCell>
+                      <TableCell className="hidden md:table-cell">{row.categoryName ?? '—'}</TableCell>
+                      <TableCell>
+                        {monthName(row.month)} {formatNumber(row.year, i18n.language)}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell text-end">
+                        {formatNumber(row.hoursStudied, i18n.language)}
+                      </TableCell>
+                      <TableCell className="hidden max-w-[12rem] truncate lg:table-cell">
+                        {row.topicsCovered}
+                      </TableCell>
+                      <TableCell className="text-end">
+                        {formatNumber(row.attendanceDays, i18n.language)}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell text-end">
+                        {row.progressPercent != null
+                          ? `${formatNumber(row.progressPercent, i18n.language)}%`
+                          : '—'}
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell">
+                        {t(`progress.mood.${row.moodEngagement}`, {
+                          defaultValue: row.moodEngagement.replace(/_/g, ' '),
+                        })}
+                      </TableCell>
+                      <TableCell className="hidden max-w-[10rem] truncate xl:table-cell">
+                        {row.assessments}
+                      </TableCell>
+                    </TableRow>
+                    {open && (
+                      <TableRow className="bg-muted/40 md:hidden">
+                        <TableCell colSpan={6}>
+                          <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                            <div>
+                              <dt className="text-muted-foreground">{t('students.class')}</dt>
+                              <dd>{row.className ?? '—'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">{t('students.category')}</dt>
+                              <dd>{row.categoryName ?? '—'}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">{t('progress.hoursStudied')}</dt>
+                              <dd>{formatNumber(row.hoursStudied, i18n.language)}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">{t('progress.topicsCovered')}</dt>
+                              <dd>{row.topicsCovered}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">{t('progress.assessments')}</dt>
+                              <dd>{row.assessments}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">{t('progress.moodEngagement')}</dt>
+                              <dd>
+                                {t(`progress.mood.${row.moodEngagement}`, {
+                                  defaultValue: row.moodEngagement.replace(/_/g, ' '),
+                                })}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">{t('progress.goals')}</dt>
+                              <dd>{row.goals}</dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">{t('progress.notes')}</dt>
+                              <dd>{row.notes}</dd>
+                            </div>
+                            {row.nextSteps && (
+                              <div className="sm:col-span-2">
+                                <dt className="text-muted-foreground">{t('progress.nextSteps')}</dt>
+                                <dd>{row.nextSteps}</dd>
+                              </div>
+                            )}
+                          </dl>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      {data && data.total > 0 && (
+        <Pagination
+          page={page}
+          limit={limit}
+          total={data.total}
+          onPageChange={setPage}
+          onLimitChange={(l) => {
+            setLimit(l);
+            setPage(1);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function StudentProgressReportTab() {
+  const { t } = useTranslation();
+  const [month, setMonth] = useState<string>('all');
+  const [year, setYear] = useState(now.getFullYear());
+  const [classId, setClassId] = useState<string>('all');
+  const [categoryId, setCategoryId] = useState<string>('all');
+  const download = useReportDownload();
+  const { data: classes } = useClasses();
+  const { data: categories } = useCategories();
+
+  const monthNum = month === 'all' ? undefined : Number(month);
+  const classNum = classId === 'all' ? undefined : Number(classId);
+  const categoryNum = categoryId === 'all' ? undefined : Number(categoryId);
+  const base = {
+    year,
+    ...(monthNum ? { month: monthNum } : {}),
+    ...(classNum ? { class_id: classNum } : {}),
+    ...(categoryNum ? { category_id: categoryNum } : {}),
+  };
+  const filename = `Student-Progress-${monthNum ? monthName(monthNum) + '-' : ''}${year}`;
+
+  return (
+    <ReportTabCard
+      filters={
+        <>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground" htmlFor="sp-month">
+              {t('reports.month')}
+            </label>
+            <Select value={month} onValueChange={setMonth}>
+              <SelectTrigger id="sp-month" className="w-36" aria-label={t('reports.month')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('common.all')}</SelectItem>
+                {Array.from({ length: 12 }, (_, i) => (
+                  <SelectItem key={i + 1} value={String(i + 1)}>
+                    {monthName(i + 1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground" htmlFor="sp-year">
+              {t('reports.year')}
+            </label>
+            <YearSelect id="sp-year" year={year} onYear={setYear} />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground" htmlFor="sp-class">
+              {t('students.class')}
+            </label>
+            <Select value={classId} onValueChange={setClassId}>
+              <SelectTrigger id="sp-class" className="w-40" aria-label={t('students.class')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('common.all')}</SelectItem>
+                {(classes ?? []).map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground" htmlFor="sp-category">
+              {t('students.category')}
+            </label>
+            <Select value={categoryId} onValueChange={setCategoryId}>
+              <SelectTrigger id="sp-category" className="w-44" aria-label={t('students.category')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('common.all')}</SelectItem>
+                {(categories ?? []).map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </>
+      }
+      buttons={
+        <DownloadButtons
+          onPdf={() => download('student-progress', `${filename}.pdf`, base)}
+          onExcel={() =>
+            download('student-progress', `${filename}.xlsx`, { ...base, format: 'xlsx' })
+          }
+        />
+      }
+    >
+      <StudentProgressReportTable
+        year={year}
+        month={monthNum}
+        classId={classNum}
+        categoryId={categoryNum}
+      />
+    </ReportTabCard>
+  );
+}
+
 export function ReportsPage() {
   const { t } = useTranslation();
   return (
     <>
       <PageHeader title={t('reports.title')} />
       <Tabs defaultValue="monthlyFees">
-        <TabsList>
+        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
           <TabsTrigger value="monthlyFees">{t('reports.monthlyFees')}</TabsTrigger>
           <TabsTrigger value="admissionFees">{t('reports.admissionFees')}</TabsTrigger>
           <TabsTrigger value="contributions">{t('reports.contributions')}</TabsTrigger>
@@ -1041,6 +1378,7 @@ export function ReportsPage() {
           <TabsTrigger value="financialSummary">{t('reports.financialSummary')}</TabsTrigger>
           <TabsTrigger value="defaulters">{t('reports.defaulters')}</TabsTrigger>
           <TabsTrigger value="attendance">{t('reports.attendance')}</TabsTrigger>
+          <TabsTrigger value="studentProgress">{t('reports.studentProgress')}</TabsTrigger>
         </TabsList>
         <TabsContent value="monthlyFees"><MonthlyFeesTab /></TabsContent>
         <TabsContent value="admissionFees"><AdmissionFeesTab /></TabsContent>
@@ -1051,6 +1389,9 @@ export function ReportsPage() {
         <TabsContent value="defaulters"><DefaultersReportTab /></TabsContent>
         <TabsContent value="attendance">
           <MonthYearReportTab path="attendance" filename="attendance" />
+        </TabsContent>
+        <TabsContent value="studentProgress">
+          <StudentProgressReportTab />
         </TabsContent>
       </Tabs>
     </>

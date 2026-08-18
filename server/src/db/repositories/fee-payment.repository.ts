@@ -9,7 +9,7 @@ export const feePaymentRepository = {
   findByIdWithStudentAndCollector(id: number) {
     return prisma.feePayment.findUnique({
       where: { id },
-      include: { student: true, collectedBy: true },
+      include: { student: true, collectedBy: { include: { user: true } } },
     });
   },
 
@@ -18,7 +18,10 @@ export const feePaymentRepository = {
   },
 
   create(data: Prisma.FeePaymentUncheckedCreateInput) {
-    return prisma.feePayment.create({ data, include: { student: true, collectedBy: true } });
+    return prisma.feePayment.create({
+      data,
+      include: { student: true, collectedBy: { include: { user: true } } },
+    });
   },
 
   setPdfPath(id: number, pdfPath: string) {

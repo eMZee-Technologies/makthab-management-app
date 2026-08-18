@@ -6,8 +6,10 @@ import type {
   SalaryRegisterAllSummary,
   FinancialSummaryYearSummary,
   FinancialSummaryAllSummary,
+  StudentProgressReportRow,
 } from '@makthab/shared';
 import { api, unwrap } from '@/api/client';
+import type { Paginated } from '@/types/domain';
 
 export function useFeeCollectionYearSummary(year: number, enabled = true) {
   return useQuery({
@@ -71,6 +73,27 @@ export function useFinancialSummaryAllSummary(enabled = true) {
     queryFn: async () =>
       unwrap<FinancialSummaryAllSummary>(
         (await api.get('/reports/financial-summary/summary', { params: { view: 'all' } })).data,
+      ),
+  });
+}
+
+export interface StudentProgressReportParams {
+  year: number;
+  month?: number;
+  class_id?: number;
+  category_id?: number;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
+
+export function useStudentProgressReportSummary(params: StudentProgressReportParams) {
+  return useQuery({
+    queryKey: ['reports', 'student-progress', 'summary', params],
+    queryFn: async () =>
+      unwrap<Paginated<StudentProgressReportRow>>(
+        (await api.get('/reports/student-progress/summary', { params })).data,
       ),
   });
 }

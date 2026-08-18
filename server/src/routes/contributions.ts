@@ -58,7 +58,10 @@ async function receiptPdf(row: ContributionRow): Promise<Buffer> {
   ];
   if (row.notes) lines.push(["Notes", row.notes]);
   if (row.recordedBy) {
-    lines.push(["Recorded by", `${row.recordedBy.fullName} (${row.recordedBy.role})`]);
+    // Prefer the linked User's live login role over the legacy Staff.role
+    // field, which can drift after a role change (see fees.ts receiptPdf).
+    const role = row.recordedBy.user?.role ?? row.recordedBy.role;
+    lines.push(["Recorded by", `${row.recordedBy.fullName} (${role})`]);
   }
   lines.push("", "Thank you for your contribution. JazakAllah.");
 
@@ -284,7 +287,7 @@ contributionsRouter.post(
     }
 
     const caption =
-      `Assalamu Alaikum. Contribution receipt ${row.receiptNo} from ${row.contributorName} ` +
+      `Assalamu Alaikum Warahmatullahi Wabarakatuh. Contribution receipt ${row.receiptNo} from ${row.contributorName} ` +
       `(${contributorTypeLabel(row.contributorType)}): ` +
       `₹ ${row.amount.toFixed(2)}/- received on ${formatReceiptDate(row.date)}. JazakAllah.`;
 

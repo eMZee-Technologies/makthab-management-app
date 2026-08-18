@@ -283,6 +283,23 @@ describeApi("reports", () => {
     expect(r.status).toBe(200);
   });
 
+  it("GET /reports/student-progress/summary?year -> JSON table", async () => {
+    const r = await request(app())
+      .get(`${API}/reports/student-progress/summary?year=2026`)
+      .set(bearer(token));
+    expect(r.status).toBe(200);
+    expect(Array.isArray(r.body?.data?.items)).toBe(true);
+  });
+
+  it.each([
+    ["?year=2026", "inline", "Student-Progress-2026.pdf"],
+    ["?year=2026&month=7&format=xlsx", "attachment", "Student-Progress-July-2026.xlsx"],
+  ])("GET /reports/student-progress%s -> %s filename %s", async (query, disposition, filename) => {
+    const r = await request(app()).get(`${API}/reports/student-progress${query}`).set(bearer(token));
+    expect(r.status).toBe(200);
+    expect(r.headers["content-disposition"]).toBe(`${disposition}; filename="${filename}"`);
+  });
+
   it("GET /reports/expenses?period -> PDF/XLSX", async () => {
     const r = await request(app()).get(`${API}/reports/expenses?period=2026`).set(bearer(token));
     expect(r.status).toBe(200);

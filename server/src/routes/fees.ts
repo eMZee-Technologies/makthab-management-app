@@ -88,11 +88,15 @@ async function receiptPdf(fee: NonNullable<FeeWithStudent>): Promise<Buffer> {
     feeType: feeTypeLabel(fee.feeType),
     period: periodLabel(fee.feeMonth, fee.feeYear),
     amountPaid: fee.amountPaid,
+    // The collecting Staff record's `role` is a legacy fixed field set once in
+    // the staff form; it can drift from the linked User's actual (DB-backed,
+    // admin-editable) login role. Prefer the live login role so a promoted
+    // Admin doesn't keep printing as their original "Teacher" staff role.
     signature: fee.collectedBy
       ? {
         image: await loadSignatureImage(fee.collectedBy.signaturePath),
         staffName: fee.collectedBy.fullName,
-        staffRole: fee.collectedBy.role,
+        staffRole: fee.collectedBy.user?.role ?? fee.collectedBy.role,
       }
       : undefined,
   });
@@ -408,7 +412,7 @@ feesRouter.post(
       throw new AppError(400, "no_whatsapp_number", "Student has no WhatsApp number on file");
     }
     const caption =
-      `Assalamu Alaikum. Fee receipt ${fee.receiptNo} for ${fee.student.fullName} ` +
+      `Assalamu Alaikum Warahmatullahi Wabarakatuh. Fee receipt ${fee.receiptNo} for ${fee.student.fullName} ` +
       `${captionPeriodClause(fee.feeType, fee.feeMonth, fee.feeYear)}: ` +
       `₹ ${fee.amountPaid.toFixed(2)}/- paid on ${formatReceiptDate(fee.paymentDate)}. JazakAllah.`;
 

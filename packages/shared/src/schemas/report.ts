@@ -122,3 +122,53 @@ export interface FinancialSummaryAllSummary {
   totals: FinancialSummaryYearData;
 }
 export type FinancialSummary = FinancialSummaryYearSummary | FinancialSummaryAllSummary;
+
+// GET /reports/student-progress(/summary) — monthly talimi progress rows.
+// year is required; month/class_id/category_id optional. When month is omitted
+// the summary/export includes every month in that year (one row per student×month).
+export const studentProgressReportQuery = z.object({
+  year: z.coerce.number().int().min(2000).max(2100),
+  month: z.coerce.number().int().min(1).max(12).optional(),
+  class_id: z.coerce.number().int().positive().optional(),
+  category_id: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(200).default(50),
+  sortBy: z
+    .enum([
+      "admissionNo",
+      "fullName",
+      "month",
+      "hoursStudied",
+      "attendanceDays",
+      "progressPercent",
+      "updatedAt",
+    ])
+    .optional(),
+  sortOrder: z.enum(["asc", "desc"]).default("asc"),
+});
+export type StudentProgressReportQuery = z.infer<typeof studentProgressReportQuery>;
+
+export type StudentProgressReportRow = {
+  id: number;
+  studentId: number;
+  admissionNo: string;
+  fullName: string;
+  className: string | null;
+  categoryName: string | null;
+  month: number;
+  year: number;
+  hoursStudied: number;
+  topicsCovered: string;
+  assessments: string;
+  attendanceDays: number;
+  moodEngagement: string;
+  goals: string;
+  notes: string;
+  previousMonthComparison: string | null;
+  progressPercent: number | null;
+  assignmentsCompleted: string | null;
+  softSkills: string | null;
+  reminders: string | null;
+  nextSteps: string | null;
+  updatedAt: string;
+};

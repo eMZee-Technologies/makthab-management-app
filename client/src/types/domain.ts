@@ -128,6 +128,54 @@ export interface AttendanceSummaryRow {
   percentage: number;
 }
 
+export type MoodEngagement = 'excellent' | 'good' | 'average' | 'needs_attention';
+
+export interface ProgressLink {
+  url: string;
+  label?: string;
+}
+
+export interface ProgressAttachment {
+  key: string;
+  filename: string;
+  mime: string;
+  size: number;
+  uploadedAt: string;
+}
+
+export interface MonthlyProgress {
+  id: number;
+  studentId: number;
+  month: number;
+  year: number;
+  hoursStudied: number;
+  topicsCovered: string;
+  assessments: string;
+  attendanceDays: number;
+  moodEngagement: MoodEngagement;
+  goals: string;
+  notes: string;
+  previousMonthComparison?: string | null;
+  progressPercent?: number | null;
+  assignmentsCompleted?: string | null;
+  softSkills?: string | null;
+  reminders?: string | null;
+  nextSteps?: string | null;
+  links: ProgressLink[];
+  attachments: ProgressAttachment[];
+  whatsappSent: boolean;
+  editedById: number;
+  createdAt: string;
+  updatedAt: string;
+  student?: Student;
+  editedBy?: { id: number; fullName: string; role: string };
+}
+
+export interface ProgressBoardRow {
+  student: Student;
+  progress: MonthlyProgress | null;
+}
+
 export interface Expense {
   id: number;
   voucherNo: string;

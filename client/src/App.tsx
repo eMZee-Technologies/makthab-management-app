@@ -10,6 +10,7 @@ import { StudentsPage } from '@/features/students/StudentsPage';
 import { ClassesPage } from '@/features/classes/ClassesPage';
 import { FeesPage } from '@/features/fees/FeesPage';
 import { AttendancePage } from '@/features/attendance/AttendancePage';
+import { StudentProgressPage } from '@/features/progress/StudentProgressPage';
 import { FinancePage } from '@/features/finance/FinancePage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
 import { UsersPage } from '@/features/users/UsersPage';
@@ -59,6 +60,9 @@ export default function App() {
 
             <Route element={<RequirePermission resource="attendance" action="view" />}>
               <Route path="attendance" element={<AttendancePage />} />
+            </Route>
+            <Route element={<RequirePermission resource="progress" action="view" />}>
+              <Route path="progress" element={<StudentProgressPage />} />
             </Route>
           </Route>
         </Route>
