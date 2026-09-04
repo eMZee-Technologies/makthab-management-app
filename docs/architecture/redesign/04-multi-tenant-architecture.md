@@ -8,6 +8,57 @@ overall attack order and phase framework this document follows.
 
 ---
 
+## 0. Status update — 2026-09-04
+
+Revisited with the business owner after this document was originally drafted.
+Recorded here rather than rewritten in place, so the reasoning trail stays
+intact.
+
+**Tenancy model: confirmed.** Model A (shared schema, `tenantId` column, with
+Postgres RLS as a second enforced layer — §2/§3.2) is the chosen approach.
+No open decision remains on §2's decision matrix.
+
+**Phases 1-3 status: substantially already shipped**, ahead of where this
+document assumed when written. Verified against the current codebase, not
+re-derived from this doc's original assumptions:
+- **Phase 1 (multi-database abstraction):** done. `server/prisma/schema.prisma`
+  is the canonical Postgres schema; `server/prisma/sqlite/schema.prisma` is
+  generated from it. `DATABASE_PROVIDER=sqlite|postgresql` selects the active
+  generated client at runtime (`server/src/db/client.ts`), and all route/service
+  code already goes through the repository layer in `server/src/db/index.ts` —
+  exactly the DAO boundary this phase called for, and exactly what the tenancy
+  work in §3.2's Prisma Client Extension needs to hook into (one place, not
+  ~40 call-sites).
+- **Phase 2 (AWS deployment):** partially done. `infra/terraform/envs/staging`
+  exists with an RDS-shaped variable set (`db_instance_class`, `db_name`,
+  `db_username`, `db_password`, `jwt_secret`). Production env and the full
+  CloudFront/ALB/ECS topology from this doc's §4 diagram were not re-verified
+  in this pass — worth confirming before Phase 4c's real second-tenant
+  provisioning, since that step assumes the wildcard-subdomain routing this
+  doc's §6 step 7 describes.
+- **Phase 3 (security hardening):** done. `RefreshSession` (rotating refresh
+  JWTs), login rate-limiting + lockout, `AuditLog` (hash-chained, append-only),
+  and DB-backed `Role`/`RolePermissionAudit` are all live per
+  `docs/architecture/BUILD_CONTRACT.md`'s changelog (2026-08-04 entries). This
+  satisfies §3's "security before multi-tenancy" sequencing.
+
+**Net effect:** the prerequisites this document's §3 attack-order argument
+required are in place. Phase 4 (this document) is next in sequence, gated
+only on the demand-confirmation question in the overview's §6.1 (unchanged —
+this pass did not re-litigate that business question).
+
+**Model inventory is stale — see the correction in §5.** Contribution,
+MonthlyProgress, and the full auth/audit model set (Role, RolePermissionAudit,
+AuditLog, RefreshSession, OtpChallenge, PasswordResetToken,
+UserApprovalAudit, AdminNotification) were added to the schema after this
+document's original §5 list was written and are folded in below.
+
+**Product naming: confirmed.** The product is being renamed from "Makthab"
+to **Maktab Cloud** — see §11 for the rationale and the rename checklist
+(not executed in this pass; documented as a scoped follow-up).
+
+---
+
 ## 1. Executive summary
 
 This is the highest-risk, most speculative phase in the whole plan, and it
@@ -236,6 +287,20 @@ CloudFront (Phase 2) ──▶ ALB ──▶ ECS Fargate task (Express API)
   different Masajid will want different category lists; only the
   `PERMISSION_CATALOG` constant in `@makthab/shared` stays global, since
   it's code, not data).
+
+  **Corrected full inventory (2026-09-04 — the original list below predated
+  several models):**
+
+  | Model | tenantId? | Notes |
+  |---|---|---|
+  | `Student`, `FeePayment`, `Attendance`, `Expense`, `Contribution`, `MonthlyProgress`, `SalaryPayment`, `Staff`, `Class`, `Category`, `AcademicYear`, `ExpenseCategory`, `FeeStructure` | Yes | Core domain tables — as originally scoped, plus `Contribution` and `MonthlyProgress` (added 2026-08-09/10, after this doc's first draft). Each also gets its own `tenantId` even where reachable via a FK (e.g. `MonthlyProgress.studentId`), so RLS (§3.2 Layer 2) can enforce the boundary on that table directly without a join. |
+  | `OrgProfile` | Yes | Becomes one-or-more rows *per tenant* (the app already supports multi-row letterhead switching via `isActive` — memory: multi-row OrgProfile branding, 2026-07-25). The `isActive` uniqueness ("only one active row") must become tenant-scoped, not global. |
+  | `Role`, `RolePermissionAudit` | Yes | Per §3.3. `RolePermissionAudit` didn't exist in the original draft (added with Phase 3 security hardening, 2026-08-04); needs `tenantId` for the same RLS reasons as its parent `Role`. |
+  | `User` | Yes | As originally scoped. |
+  | `RefreshSession`, `OtpChallenge`, `PasswordResetToken`, `UserApprovalAudit`, `AdminNotification` | Yes | Auth/session/audit models added with Phase 3 security hardening (2026-08-04), not present when this doc was first drafted. All reachable via `userId`, but each still gets its own `tenantId` for the same direct-RLS-enforcement reason as above — a leaked refresh session or OTP is as sensitive as a leaked financial row. |
+  | `AuditLog` | Yes | The security audit trail itself must be tenant-scoped — an unscoped `AuditLog` would let Tenant A's admin read Tenant B's login/mutation history via `/admin/audit-logs`. Not in the original draft. |
+  | *(new)* `Tenant` | — (is the tenant) | See below. |
+
 - **New `Tenant` model:** `id`, `slug` (unique, used for subdomain
   resolution), `name`, `status` (active/suspended/offboarding), `createdAt`,
   plan/billing fields as needed later.
@@ -248,13 +313,21 @@ CloudFront (Phase 2) ──▶ ALB ──▶ ECS Fargate task (Express API)
   index on `status` alone gets progressively less selective as more
   tenants' data accumulates in the same table.
 - **Unique constraints need `tenantId` prefixed in:** `Student.admissionNo`,
-  `FeePayment.receiptNo`, `Expense.voucherNo`, `Class.name`,
-  `Category.name`, `AcademicYear.name`, `ExpenseCategory.name`,
-  `Role.name` (§3.3), `User.username`/`User.email` — every one of these is
-  currently globally unique and must become `@@unique([tenantId, x])`,
+  `FeePayment.receiptNo`, `Contribution.receiptNo`, `Expense.voucherNo`,
+  `Class.name`, `Category.name`, `AcademicYear.name`, `ExpenseCategory.name`,
+  `Role.name` (§3.3), `User.username`/`User.email`/`User.phone`,
+  `MonthlyProgress`'s `@@unique([studentId, month, year])`,
+  `Attendance`'s `@@unique([studentId, date])`,
+  `SalaryPayment`'s `@@unique([staffId, salaryMonth, salaryYear])`,
+  `FeeStructure`'s `@@unique([classId, categoryId, academicYearId, feeType])`
+  — every one of these is currently globally unique (or scoped only by an
+  already-tenant-scoped FK) and must become `@@unique([tenantId, ...])`,
   otherwise Tenant B can't reuse "LKG" as a class name or "admin" as a
   username just because Tenant A already has one. This is the single
-  largest mechanical change in the migration (§8).
+  largest mechanical change in the migration (§8). The `Contribution`/
+  `MonthlyProgress`/`Attendance`/`SalaryPayment`/`FeeStructure` entries are
+  additions to the original list — confirmed against the current schema
+  during the 2026-09-04 pass.
 - **RLS policy design:** see §3.2 for the canonical policy shape; generate
   one per tenant-scoped table via a small script rather than hand-writing
   ~13 nearly-identical policies (reduces the chance of one table being
@@ -436,3 +509,59 @@ defines for the single-tenant baseline, but with concurrent traffic from
 both tenants simultaneously, to validate the rate-limiting (§7) and
 connection-pool-sizing assumptions (§5) under realistic multi-tenant
 concurrency rather than assuming they hold.
+
+---
+
+## 11. Product naming — Makthab → Maktab Cloud
+
+Decided 2026-09-04, alongside confirming the tenancy model in §0/§2. Not
+executed in this pass — this section is the scoped checklist for a future
+session, kept here because the rename and the multi-tenancy pivot are the
+same underlying business decision (single-Masjid tool → product sold to
+many).
+
+**Name:** "Maktab Cloud". Two changes from the current name:
+- **Spelling correction:** "Makthab" → "Maktab", the standard transliteration
+  of مكتب (maktab — school/office), dropping the inserted "h" that doesn't
+  correspond to any letter in the Arabic/Urdu source. This is a legibility
+  fix as much as a rebrand.
+- **"Cloud" suffix:** signals the SaaS/multi-tenant positioning directly (in
+  the spirit of established patterns like "Salesforce", "Workday" —
+  descriptive, not cute), and reads naturally with the subdomain scheme this
+  doc already specifies in §3.1 (`{tenant-slug}.maktab.app` — formerly
+  written as `.makthab.app` throughout §3.1/§4/§6/§7; update those
+  references when this rename is executed).
+
+**Rename checklist (do this as its own PR, separate from any tenancy code
+change, so a broken build is easy to bisect):**
+1. `package.json` root `name` (`makthab-app` → `maktab-cloud` or similar) and
+   `description`.
+2. npm workspace scope `@makthab/shared` → `@maktab/shared` — touches every
+   import across `client/`, `server/`, and the package's own `package.json`;
+   mechanical but wide (grep-and-replace, then `npm run typecheck` as the
+   verification gate).
+3. `CLAUDE.md` (both the project name in the header and the "Makthab" prose
+   references) and every doc under `docs/` that names the product
+   (`docs/architecture/BUILD_CONTRACT.md`'s title/§0, this redesign doc set,
+   `docs/migration/MIGRATION.md`).
+4. Directory/db-file names that embed the old identity: `data/madrasa.db`
+   (fine to keep — "madrasa" is a generic noun, not the brand — but note it
+   if the team wants full consistency), Terraform `project` variable default
+   (`infra/terraform/envs/staging/variables.tf` line 13-16, currently
+   `default = "makthab"` — also feeds `db_name`/`db_username` defaults on
+   the same file, so this touches the RDS instance naming, not just labels).
+5. Client-visible strings: page titles, the login screen, PDF/receipt
+   letterhead defaults (`OrgProfile` seed data — note this is *tenant*
+   branding, separate from *product* branding; don't conflate a tenant's
+   own Masjid name with the Maktab Cloud product name in the UI chrome).
+6. Domain registration and DNS (`maktab.app` or whatever TLD is chosen) —
+   an actual external/account-level action, do this deliberately and early
+   since §3.1's subdomain-per-tenant design depends on owning the apex
+   domain before Phase 4c's provisioning work can point real subdomains at
+   it.
+7. Any external references already created this session in the repo working
+   tree unrelated to this doc (none as of this pass) should be swept for the
+   old name too — not found during this review, but worth a final
+   `git grep -i makthab` pass right before the rename PR merges, since new
+   references accumulate between when this checklist is written and when
+   it's executed.

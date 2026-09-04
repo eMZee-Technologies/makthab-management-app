@@ -447,6 +447,28 @@ export interface ReceiptDoc {
   signature?: { image?: EmbeddedImage; staffName: string; staffRole: string };
 }
 
+// Same bordered-card template as ReceiptDoc, generalized so both the fee
+// receipt and the contribution receipt render from one layout function —
+// keeps the two receipt types visually identical (letterhead, field rules,
+// signature block) without duplicating the drawing code.
+interface CardReceiptField {
+  label: string;
+  value: string;
+  bold?: boolean;
+  color?: Rgb;
+  size?: number;
+}
+interface CardReceiptDoc {
+  org: { name: string; address: string };
+  receiptNo: string;
+  date: string;
+  /** e.g. "FEE RECEIPT" / "CONTRIBUTIONS RECEIPT" — centered in the header row. */
+  title: string;
+  fields: CardReceiptField[];
+  thankYouText: string;
+  signature?: { image?: EmbeddedImage; staffName: string; staffRole: string };
+}
+
 const RECEIPT_BORDER_COLOR: Rgb = hexRgb("#1F4E79");
 const RECEIPT_LABEL_COLOR: Rgb = hexRgb("#404040");
 const RECEIPT_RULE_COLOR: Rgb = hexRgb("#BFBFBF");
@@ -460,7 +482,7 @@ function fitSize(text: string, maxSize: number, minSize: number, maxW: number, b
   return size;
 }
 
-function layoutReceipt(doc: ReceiptDoc): { cmds: DrawCmd[]; images: EmbeddedImage[] } {
+function layoutCardReceipt(doc: CardReceiptDoc): { cmds: DrawCmd[]; images: EmbeddedImage[] } {
   const cmds: DrawCmd[] = [];
   const images: EmbeddedImage[] = [];
   const text = (x: number, y: number, t: string, size: number, bold: boolean, color: Rgb = BLACK) =>
@@ -491,10 +513,21 @@ function layoutReceipt(doc: ReceiptDoc): { cmds: DrawCmd[]; images: EmbeddedImag
 
   let y = BOX_TOP - PAD - 8;
 
-  // Header row: Receipt No (left) — FEE RECEIPT (center) — Date (right).
-  text(innerLeft, y, `Receipt No: ${doc.receiptNo}`, 9, false, RECEIPT_LABEL_COLOR);
-  text(centerX("FEE RECEIPT", 14, true, BOX_X, BOX_W), y - 1, "FEE RECEIPT", 14, true, RECEIPT_BORDER_COLOR);
+  // Header row: Receipt No (left) — title (center) — Date (right). The title
+  // is centered within the actual free space between the two side labels
+  // (not the whole box) and shrunk to fit, since "CONTRIBUTIONS RECEIPT" is
+  // much wider than "FEE RECEIPT" and a long receiptNo can otherwise collide
+  // with it under fixed centering.
+  const receiptNoLabel = `Receipt No: ${doc.receiptNo}`;
   const dateLabel = `Date: ${doc.date}`;
+  const GUTTER = 10;
+  const midLeft = innerLeft + estTextWidth(receiptNoLabel, 9, false) + GUTTER;
+  const midRight = innerRight - estTextWidth(dateLabel, 9, false) - GUTTER;
+  const midW = Math.max(40, midRight - midLeft);
+  const titleSize = fitSize(doc.title, 14, 8, midW, true);
+  const titleX = midLeft + Math.max(0, (midW - estTextWidth(doc.title, titleSize, true)) / 2);
+  text(innerLeft, y, receiptNoLabel, 9, false, RECEIPT_LABEL_COLOR);
+  text(titleX, y - 1, doc.title, titleSize, true, RECEIPT_BORDER_COLOR);
   text(rightX(dateLabel, 9, false, innerRight), y, dateLabel, 9, false, RECEIPT_LABEL_COLOR);
   y -= 16;
   hRule(innerLeft, y, innerRight);
@@ -529,20 +562,19 @@ function layoutReceipt(doc: ReceiptDoc): { cmds: DrawCmd[]; images: EmbeddedImag
     y -= 22;
   };
 
-  fieldRow("Student Name", doc.studentName);
-  fieldRow("Admission No", doc.admissionNo);
-  fieldRow("Fee Type", doc.feeType);
-  fieldRow("Period", doc.period);
-  fieldRow("Payment Date", doc.date);
-  fieldRow("Amount Paid", formatCurrency(doc.amountPaid), {
-    bold: true,
-    color: RECEIPT_AMOUNT_COLOR,
-    size: 13,
-  });
+  for (const f of doc.fields) {
+    fieldRow(f.label, f.value, { bold: f.bold, color: f.color, size: f.size });
+  }
 
   y -= 2;
-  const thankYou = "Thank you for your payment.";
-  text(centerX(thankYou, 10, false, BOX_X, BOX_W), y, thankYou, 10, false, RECEIPT_LABEL_COLOR);
+  text(
+    centerX(doc.thankYouText, 10, false, BOX_X, BOX_W),
+    y,
+    doc.thankYouText,
+    10,
+    false,
+    RECEIPT_LABEL_COLOR
+  );
 
   // Two signature lines anchored to the bottom of the card (independent of
   // the field stack above — there's always headroom, see the sizing note
@@ -585,6 +617,51 @@ function layoutReceipt(doc: ReceiptDoc): { cmds: DrawCmd[]; images: EmbeddedImag
 // BOX_H=400 leaves comfortable headroom under the six field rows + footer
 // before it would ever reach the signature line's fixed y-position).
 export function renderReceiptPdf(doc: ReceiptDoc): Buffer {
-  const { cmds, images } = layoutReceipt(doc);
+  const { cmds, images } = layoutCardReceipt({
+    org: doc.org,
+    receiptNo: doc.receiptNo,
+    date: doc.date,
+    title: "FEE RECEIPT",
+    fields: [
+      { label: "Student Name", value: doc.studentName },
+      { label: "Admission No", value: doc.admissionNo },
+      { label: "Fee Type", value: doc.feeType },
+      { label: "Period", value: doc.period },
+      { label: "Payment Date", value: doc.date },
+      { label: "Amount Paid", value: formatCurrency(doc.amountPaid), bold: true, color: RECEIPT_AMOUNT_COLOR, size: 13 },
+    ],
+    thankYouText: "Thank you for your payment.",
+    signature: doc.signature,
+  });
+  return serializePdf([cmds], images);
+}
+
+// Contribution (donation) receipt — same bordered-card template as the fee
+// receipt (letterhead, field rules, signature block), with contributor
+// fields instead of student/fee fields per the printed receipt-book format.
+export interface ContributionReceiptDoc {
+  org: { name: string; address: string };
+  /** Display-ready date, e.g. "05-Jul-2026". */
+  date: string;
+  receiptNo: string;
+  contributorName: string;
+  amountPaid: number;
+  signature?: { image?: EmbeddedImage; staffName: string; staffRole: string };
+}
+
+export function renderContributionReceiptPdf(doc: ContributionReceiptDoc): Buffer {
+  const { cmds, images } = layoutCardReceipt({
+    org: doc.org,
+    receiptNo: doc.receiptNo,
+    date: doc.date,
+    title: "CONTRIBUTIONS RECEIPT",
+    fields: [
+      { label: "Contributor Name", value: doc.contributorName },
+      { label: "Payment Date", value: doc.date },
+      { label: "Amount Paid", value: formatCurrency(doc.amountPaid), bold: true, color: RECEIPT_AMOUNT_COLOR, size: 13 },
+    ],
+    thankYouText: "Thank you for your Contribution.",
+    signature: doc.signature,
+  });
   return serializePdf([cmds], images);
 }

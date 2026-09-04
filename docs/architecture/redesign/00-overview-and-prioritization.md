@@ -173,11 +173,11 @@ modernize the existing single-tenant product. But confirm before Phase 4:
    (a hardened, cloud-deployable, better-looking single-tenant app) and
    revisit multi-tenancy when there's a second paying customer, rather than
    building tenancy speculatively.
-2. **Tenancy model choice** (shared-schema vs. separate-schema vs.
-   separate-database) has cost/isolation trade-offs detailed in
-   [04](./04-multi-tenant-architecture.md) §2 — this is a decision the business
-   should sign off on given it affects both security posture and per-tenant
-   infra cost.
+2. ~~**Tenancy model choice**~~ **Resolved 2026-09-04:** shared-schema +
+   `tenantId` + Postgres RLS (Model A), per
+   [04](./04-multi-tenant-architecture.md) §0/§2. Decision point 1 above
+   (confirmed multi-Masjid demand) remains the open gate before starting
+   Phase 4 build work.
 3. **Who owns ongoing security/compliance posture post-launch?** Phase 3
    stands up controls; someone needs to own key rotation, dependency
    patching, and incident response afterward. This is an org decision, not
