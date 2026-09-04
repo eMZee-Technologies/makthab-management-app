@@ -621,7 +621,7 @@ export function FinancePage() {
   const { t } = useTranslation();
   return (
     <>
-      <PageHeader title={t('nav.finance')} />
+      <PageHeader title={t('nav.finance')} description={t('finance.subtitle')} />
       <Tabs defaultValue="expenses">
         <TabsList>
           <TabsTrigger value="expenses">{t('expenses.title')}</TabsTrigger>

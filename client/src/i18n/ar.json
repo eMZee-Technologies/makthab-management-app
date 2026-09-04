@@ -60,7 +60,8 @@
   "auth": {
     "login": "تسجيل الدخول",
     "loginTitle": "تسجيل الدخول إلى مرثب آب",
-    "loginSubtitle": "أدخل بياناتك للمتابعة",
+    "loginSubtitle": "أدخل بيانات الدخول للمتابعة",
+    "railHeadline": "السجل مفتوح",
     "username": "اسم المستخدم",
     "password": "كلمة المرور",
     "signingIn": "جارٍ تسجيل الدخول…",
@@ -81,18 +82,26 @@
     "alreadyHaveAccount": "لديك حساب بالفعل؟",
     "forgotPassword": "نسيت كلمة المرور؟"
   },
+  "finance": {
+    "subtitle": "المصروفات ورواتب الموظفين هذا الشهر."
+  },
   "dashboard": {
-    "title": "لوحة التحكم",
+    "title": "اليوم في المكتب",
     "subtitle": "التسجيل والتحصيل والحضور في نظرة واحدة.",
-    "totalStudents": "إجمالي الطلاب",
-    "todayAttendance": "حضور اليوم",
+    "totalStudents": "الطلاب",
+    "todayAttendance": "حاضر اليوم",
     "monthCollection": "تحصيل هذا الشهر",
     "outstanding": "الرسوم المستحقة",
     "recentActivity": "النشاط الأخير",
     "present": "حاضر",
     "absent": "غائب",
+    "late": "متأخر",
     "unmarked": "غير مسجّل",
     "todayMix": "حضور اليوم",
+    "monthlyCollection": "التحصيل الشهري",
+    "feesSeries": "الرسوم",
+    "contribSeries": "التبرعات",
+    "collectionCaption": "آخر ستة أشهر · الرسوم والتبرعات",
     "collectionVsTarget": "التحصيل مقابل المستحق",
     "outstandingHint": "لا تزال هناك رسوم شهرية غير مدفوعة. سجّل دفعة من الدخل.",
     "viewFees": "فتح الدخل",
@@ -101,6 +110,7 @@
   },
   "students": {
     "title": "الطلاب",
+    "subtitle": "القائمة النشطة للسنة الدراسية الحالية.",
     "admit": "قبول طالب",
     "admissionNo": "رقم القبول",
     "admissionDate": "تاريخ القبول",
@@ -145,6 +155,7 @@
   },
   "fees": {
     "title": "الدخل",
+    "subtitle": "الرسوم الشهرية والتبرعات والمستحقات.",
     "collect": "تحصيل الرسوم",
     "receiptNo": "رقم الإيصال",
     "student": "الطالب",
@@ -199,6 +210,7 @@
   },
   "attendance": {
     "title": "الحضور",
+    "subtitle": "سجّل حضور الصف ثم راجع الإجمالي الشهري.",
     "date": "التاريخ",
     "mark": "تسجيل الحضور",
     "present": "حاضر",

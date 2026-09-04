@@ -102,6 +102,7 @@ export function StudentsPage() {
     <>
       <PageHeader
         title={t('students.title')}
+        description={t('students.subtitle')}
         actions={
           canCreate && (
             <Button onClick={openCreate}>

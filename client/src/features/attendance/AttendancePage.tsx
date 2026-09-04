@@ -300,7 +300,7 @@ export function AttendancePage() {
   const canCreate = can('attendance', 'create');
   return (
     <>
-      <PageHeader title={t('attendance.title')} />
+      <PageHeader title={t('attendance.title')} description={t('attendance.subtitle')} />
       <Tabs defaultValue={canCreate ? 'mark' : 'summary'}>
         <TabsList>
           {canCreate && <TabsTrigger value="mark">{t('attendance.mark')}</TabsTrigger>}
