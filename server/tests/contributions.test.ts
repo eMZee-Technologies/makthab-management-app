@@ -1,6 +1,14 @@
 import request from "supertest";
 import { API, CREDS, bearer, describeApi, loadApp, login } from "./helpers";
 
+// superagent doesn't buffer unknown binary bodies by default; collect the raw
+// bytes so the PDF's own text can be inspected (same pattern as fees.test.ts).
+function binaryParser(res: request.Response, cb: (err: Error | null, body: Buffer) => void): void {
+  const chunks: Buffer[] = [];
+  res.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+  res.on("end", () => cb(null, Buffer.concat(chunks)));
+}
+
 // Contributions — income receipts gated by fees.* permissions
 describeApi("contributions", () => {
   const app = () => loadApp()!;
@@ -28,7 +36,7 @@ describeApi("contributions", () => {
     contributionId = r.body.data.id;
   });
 
-  it("accountant can list / get / patch / delete contributions", async () => {
+  it("accountant can list / get / patch contributions but not delete", async () => {
     const list = await request(app()).get(`${API}/contributions`).set(bearer(token));
     expect(list.status).toBe(200);
     expect(list.body.data.items.length).toBeGreaterThan(0);
@@ -56,9 +64,16 @@ describeApi("contributions", () => {
     expect([200, 201]).toContain(created.status);
     expect(created.body.data.contributorName).toBe("Anonymous");
 
-    const del = await request(app())
+    // Deletion is Admin-only — an Accountant (who otherwise holds fees.delete) is refused.
+    const deniedDelete = await request(app())
       .delete(`${API}/contributions/${created.body.data.id}`)
       .set(bearer(token));
+    expect(deniedDelete.status).toBe(403);
+
+    const admin = await login(CREDS.admin.username, CREDS.admin.password);
+    const del = await request(app())
+      .delete(`${API}/contributions/${created.body.data.id}`)
+      .set(bearer(admin));
     expect(del.status).toBe(200);
     expect(del.body.data.id).toBe(created.body.data.id);
   });
@@ -72,6 +87,32 @@ describeApi("contributions", () => {
       date: "2026-08-09",
     });
     expect(r.status).toBe(403);
+  });
+
+  it("GET /contributions/:id/receipt -> bordered receipt card with contributor fields", async () => {
+    const created = await request(app()).post(`${API}/contributions`).set(bearer(token)).send({
+      amount: 300,
+      contributorName: "Receipt Template Donor",
+      contributorType: "individual",
+      date: "2026-08-09",
+    });
+    expect([200, 201]).toContain(created.status);
+
+    const r = await request(app())
+      .get(`${API}/contributions/${created.body.data.id}/receipt`)
+      .set(bearer(token))
+      .buffer()
+      .parse(binaryParser);
+    const pdfText = (r.body as Buffer).toString("latin1");
+    expect(pdfText).toContain("CONTRIBUTIONS RECEIPT");
+    expect(pdfText).toContain("Contributor Name");
+    expect(pdfText).toContain("Receipt Template Donor");
+    expect(pdfText).toContain("Thank you for your Contribution.");
+    // Same "Name above the rule, Role below the rule" signature block as fee
+    // receipts (see fees.test.ts) — the seeded accountant's fullName and role
+    // are both literally "Accountant", each on its own text operator.
+    const staffLines = pdfText.match(/\(Accountant\) Tj/g) ?? [];
+    expect(staffLines.length).toBeGreaterThanOrEqual(2);
   });
 
   it("POST /contributions/:id/whatsapp without number -> 400 no_whatsapp_number", async () => {
