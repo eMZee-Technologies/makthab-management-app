@@ -30,6 +30,7 @@ import { formatCurrency, formatDate, monthName } from '@/lib/format';
 import { extractApiError } from '@/api/client';
 import { openWhatsApp } from '@/lib/download';
 import { useCan } from '@/lib/permissions';
+import { useAuthStore } from '@/store/authStore';
 import { defaulterUpdateSchema, type DefaulterUpdateInput } from '@/lib/schemas';
 import {
   useFees,
@@ -351,7 +352,9 @@ function ContributionsTab() {
   const can = useCan();
   const canCreate = can('fees', 'create');
   const canUpdate = can('fees', 'update');
-  const canDelete = can('fees', 'delete');
+  // Contributions are donation records — deletion is Admin-only regardless of
+  // the generic fees.delete permission an Accountant may also hold.
+  const canDelete = useAuthStore((s) => s.user?.role) === 'Admin';
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [year, setYear] = useState<string>('all');
