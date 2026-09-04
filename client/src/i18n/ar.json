@@ -83,13 +83,21 @@
   },
   "dashboard": {
     "title": "لوحة التحكم",
+    "subtitle": "التسجيل والتحصيل والحضور في نظرة واحدة.",
     "totalStudents": "إجمالي الطلاب",
     "todayAttendance": "حضور اليوم",
     "monthCollection": "تحصيل هذا الشهر",
     "outstanding": "الرسوم المستحقة",
     "recentActivity": "النشاط الأخير",
     "present": "حاضر",
-    "absent": "غائب"
+    "absent": "غائب",
+    "unmarked": "غير مسجّل",
+    "todayMix": "حضور اليوم",
+    "collectionVsTarget": "التحصيل مقابل المستحق",
+    "outstandingHint": "لا تزال هناك رسوم شهرية غير مدفوعة. سجّل دفعة من الدخل.",
+    "viewFees": "فتح الدخل",
+    "activity": "النشاط",
+    "when": "الوقت"
   },
   "students": {
     "title": "الطلاب",
