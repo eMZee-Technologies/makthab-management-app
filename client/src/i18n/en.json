@@ -83,13 +83,21 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "subtitle": "Enrolment, collection, and attendance at a glance.",
     "totalStudents": "Total Students",
     "todayAttendance": "Today's Attendance",
     "monthCollection": "This Month's Collection",
     "outstanding": "Outstanding Fees",
     "recentActivity": "Recent Activity",
     "present": "Present",
-    "absent": "Absent"
+    "absent": "Absent",
+    "unmarked": "Unmarked",
+    "todayMix": "Today's attendance",
+    "collectionVsTarget": "Collection vs outstanding",
+    "outstandingHint": "Families still have unpaid monthly fees. Record a payment from Income.",
+    "viewFees": "Open Income",
+    "activity": "Activity",
+    "when": "When"
   },
   "students": {
     "title": "Students",

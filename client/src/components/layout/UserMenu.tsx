@@ -38,10 +38,13 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <Avatar>
-            <AvatarFallback>{initials(user?.fullName)}</AvatarFallback>
+        <button className="flex items-center gap-2 rounded-md px-1 py-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="text-xs">{initials(user?.fullName)}</AvatarFallback>
           </Avatar>
+          <span className="hidden max-w-[140px] truncate text-sm font-medium md:inline">
+            {user?.fullName}
+          </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">

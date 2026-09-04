@@ -86,7 +86,6 @@ export const env = {
   whatsappBusinessApiToken: process.env.WHATSAPP_BUSINESS_API_TOKEN || undefined,
   whatsappBusinessPhoneNumberId: process.env.WHATSAPP_BUSINESS_PHONE_NUMBER_ID || undefined,
   whatsappBusinessApiVersion: process.env.WHATSAPP_BUSINESS_API_VERSION ?? "v21.0",
-  puppeteerExecutablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
   databaseProvider: databaseProvider(),
   // Optional outbound delivery for OTP / admin alerts (MVP logs when unset).
   smtpHost: process.env.SMTP_HOST || undefined,
