@@ -246,7 +246,10 @@ export interface DashboardStats {
   totalStudents: number;
   todayPresent: number;
   todayAbsent: number;
+  todayLate: number;
+  todayLeave: number;
   monthCollection: number;
   outstanding: number;
+  collectionTrend: { year: number; month: number; fees: number; contributions: number }[];
   recentActivity?: { id: number; type: string; description: string; date: string }[];
 }

@@ -748,7 +748,7 @@ export function FeesPage() {
 
   return (
     <>
-      <PageHeader title={t('fees.title')} />
+      <PageHeader title={t('fees.title')} description={t('fees.subtitle')} />
       <Tabs defaultValue="monthly">
         <TabsList>
           <TabsTrigger value="monthly">{t('fees.monthly')}</TabsTrigger>

@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field } from '@/components/form/Field';
 import { Spinner } from '@/components/ui/spinner';
-import { LocaleToggle } from '@/components/layout/LocaleToggle';
+import { AuthShell } from '@/components/layout/AuthShell';
 import { useAuthStore } from '@/store/authStore';
 import { formatApiErrorMessage } from '@/api/client';
 import { useForgotPassword, useVerifyOtp, useResetPassword } from './api';
@@ -41,16 +41,16 @@ export function ForgotPasswordPage() {
     null;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
-      <div className="absolute end-4 top-4">
-        <LocaleToggle />
+    <AuthShell>
+      <div className="mb-6 flex items-center gap-2 lg:hidden">
+        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <GraduationCap className="h-4 w-4" />
+        </div>
+        <p className="font-serif text-lg font-semibold">Makthab</p>
       </div>
-      <Card className="w-full max-w-sm">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <GraduationCap className="h-6 w-6" />
-          </div>
-          <CardTitle>Reset password</CardTitle>
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardHeader className="px-0 pt-0">
+          <CardTitle className="font-serif text-2xl">Reset password</CardTitle>
           <CardDescription>
             {step === 'done'
               ? 'Password updated. You can sign in.'
@@ -169,6 +169,6 @@ export function ForgotPasswordPage() {
           </p>
         </CardContent>
       </Card>
-    </div>
+    </AuthShell>
   );
 }
